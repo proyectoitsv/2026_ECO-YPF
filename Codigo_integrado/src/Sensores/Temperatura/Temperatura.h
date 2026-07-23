@@ -1,6 +1,7 @@
 #ifndef TEMPERATURA_H
 #define TEMPERATURA_H
 
+#include <Arduino.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
