@@ -7,10 +7,6 @@ void GestorTemperatura::inicializar() {
     sensores.begin();
 }
 
-void solicitarTemperaturas() {
-    // Esta función se puede llamar antes de leer para pedir la conversión
-}
-
 void GestorTemperatura::solicitarTemperaturas() {
     sensores.requestTemperatures();
 }

@@ -8,8 +8,8 @@ const float BATT_MAX        = 56.0;    // Tensión real máxima de la batería (
 const int   PIN_ANALOG      = 34;      // Pin analógico de lectura
 
 // --- PARÁMETROS DE TIEMPO Y FILTRADO ---
-const unsigned long TIEMPO_MUESTRA  = 50;     // Muestra cada 50 ms
-const unsigned long TIEMPO_REPORTE  = 2000;   // Actualización cada 2 segundos (2000 ms)
+const unsigned long TIEMPO_MUESTRA  = 50;     // Tiempo de muestreo 
+const unsigned long TIEMPO_REPORTE  = 2000;   // Actualización 
 const int           CANT_MUESTRAS   = 10;     // Promedio de 10 muestras
 const float         PASO_MINIMO_V   = 0.100;  // Umbral de cambio de 100 mV (0.1 V)
 // --------------------------------
