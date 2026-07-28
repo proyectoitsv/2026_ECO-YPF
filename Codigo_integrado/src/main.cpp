@@ -1,15 +1,20 @@
 #include <Arduino.h>
 #include "Sensores/Tension/Tension.h"
 #include "Sensores/Temperatura/Temperatura.h"
-
+#include "Sensores/Inductivo(velocidad)/Inductivo.h"
 // --- CONFIGURACIÓN SENSOR INDUCTIVO ---
 const int pinSensorInductivo = 26;
-const int pulsosPorRevolucion = 5;
-const float diametroRuedaMetros = 0.20;
+const int pulsosPorRevolucion = 1;
+const float diametroRuedaMetros = 0.49;
+
+
+float tiempoSegundos1 = 0.0f; // Variable global para almacenar el tiempo transcurrido en segundos
 
 volatile unsigned long contadorPulsos = 0;
 unsigned long tiempoAnteriorInductivo = 0;
 const unsigned long intervaloInductivo = 1000; // Recálculo cada 1 segundo
+unsigned long pulsosCopiados = 0;
+float tiempoResta=0;
 
 float rpm = 0.0;
 float velocidadKmH = 0.0;
@@ -62,22 +67,31 @@ void loop() {
     // 3. Lectura de Inductivo (Velocidad / RPM)
     unsigned long tiempoActual = millis();
     if (tiempoActual - tiempoAnteriorInductivo >= intervaloInductivo) {
+        
         noInterrupts();
-        unsigned long pulsosCopiados = contadorPulsos;
+        tiempoResta = tiempoActual - tiempoAnteriorInductivo;
+        
+        //unsigned long pulsosCopiados = contadorPulsos;
+        pulsosCopiados = contadorPulsos;
         contadorPulsos = 0;
         interrupts();
 
-        rpm = (pulsosCopiados * 60.0) / pulsosPorRevolucion;
+        rpm = (pulsosCopiados * 60.0 * 1000) / (pulsosPorRevolucion * tiempoResta);
         float circunferencia = 3.141592 * diametroRuedaMetros;
         float rps = rpm / 60.0;
         velocidadKmH = rps * circunferencia * 3.6;
+        
 
         tiempoAnteriorInductivo = tiempoActual;
     }
-
-    Serial.println("RPM: "); Serial.print(rpm, 1);
+   
+    Serial.println("Tiempo Resta"); Serial.print(tiempoResta, 3);
+    //Serial.println("RPM: "); Serial.print(rpm, 1);
     Serial.print(" | Velocidad: "); Serial.print(velocidadKmH, 2);
-    Serial.println(" km/h");
+    Serial.print(" km/h");
+    
+    Serial.print(pulsosCopiados); 
+    Serial.println(" s");
 
     delay(100);
 }

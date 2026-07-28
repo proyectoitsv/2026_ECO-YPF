@@ -55,5 +55,7 @@ MedidaInductivo GestorInductivo::leerMedida() {
     datos.rpm = _rpmActual;
     datos.velocidadKmH = _velocidadActual;
 
+    
+
     return datos;
 }
