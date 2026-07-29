@@ -16,12 +16,22 @@ const unsigned long intervaloInductivo = 1000; // Recálculo cada 1 segundo
 unsigned long pulsosCopiados = 0;
 float tiempoResta=0;
 
+float circunferencia = 3.141592 * diametroRuedaMetros;
 float rpm = 0.0;
 float velocidadKmH = 0.0;
 
 // ISR para el sensor inductivo
 void IRAM_ATTR cuentaPulsos() {
     contadorPulsos++;
+}
+
+
+//ISR para el temporizador
+hw_timer_t *timer = NULL;
+volatile bool temporizadorListo = false;
+
+void IRAM_ATTR onTimer() {
+    temporizadorListo = true; 
 }
 
 // Objetos globales de temperatura
@@ -31,6 +41,7 @@ GestorTemperatura sensorTemp2(33); // Segundo sensor
 void setup() {
     Serial.begin(115200);
     
+
     // Configuración Batería
     pinMode(34, INPUT); // Pin analógico de la batería
     
@@ -41,6 +52,12 @@ void setup() {
     // Configuración Inductivo (Velocidad)
     pinMode(pinSensorInductivo, INPUT);
     attachInterrupt(digitalPinToInterrupt(pinSensorInductivo), cuentaPulsos, RISING);
+
+    // Configuración del temporizador
+    timer = timerBegin(0, 80, true); //un tick cada 1 microsegundo
+    timerAttachInterrupt(timer, &onTimer, true);
+    timerAlarm(timer, 1000000, true); //alarma cada 1 segundo
+
 }
 
 void loop() {
@@ -64,7 +81,16 @@ void loop() {
     Serial.print(" °C | Temp2: "); Serial.print(temp2);
     Serial.print(" °C | ");
 
-    // 3. Lectura de Inductivo (Velocidad / RPM)
+
+    // 3. Temporizador 
+    if (temporizadorListo) { //adentro de este if pongan todo, yo puse lo que decia abajo para q guarde la variable pero siga contando
+        temporizadorListo = false; // Reinicia la bandera
+        unsigned long pulsosCopiados = contadorPulsos;
+        contadorPulsos = 0;
+        velocidadKmH = pulsosCopiados * circunferencia * 3.6; // Convertir RPM a km/h
+    }
+
+    /* 4. Lectura de Inductivo (Velocidad / RPM)
     unsigned long tiempoActual = millis();
     if (tiempoActual - tiempoAnteriorInductivo >= intervaloInductivo) {
         
@@ -83,6 +109,7 @@ void loop() {
         
 
         tiempoAnteriorInductivo = tiempoActual;
+        */
     }
    
     Serial.println("Tiempo Resta"); Serial.print(tiempoResta, 3);
