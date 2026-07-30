@@ -2,11 +2,11 @@
 #include "Sensores/Tension/Tension.h"
 #include "Sensores/Temperatura/Temperatura.h"
 #include "Sensores/Inductivo(velocidad)/Inductivo.h"
+
 // --- CONFIGURACIÓN SENSOR INDUCTIVO ---
 const int pinSensorInductivo = 26;
 const int pulsosPorRevolucion = 1;
 const float diametroRuedaMetros = 0.49;
-
 
 float tiempoSegundos1 = 0.0f; // Variable global para almacenar el tiempo transcurrido en segundos
 
@@ -14,7 +14,7 @@ volatile unsigned long contadorPulsos = 0;
 unsigned long tiempoAnteriorInductivo = 0;
 const unsigned long intervaloInductivo = 1000; // Recálculo cada 1 segundo
 unsigned long pulsosCopiados = 0;
-float tiempoResta=0;
+float tiempoResta = 0;
 
 float circunferencia = 3.141592 * diametroRuedaMetros;
 float rpm = 0.0;
@@ -25,8 +25,7 @@ void IRAM_ATTR cuentaPulsos() {
     contadorPulsos++;
 }
 
-
-//ISR para el temporizador
+// ISR para el temporizador
 hw_timer_t *timer = NULL;
 volatile bool temporizadorListo = false;
 
@@ -41,7 +40,6 @@ GestorTemperatura sensorTemp2(33); // Segundo sensor
 void setup() {
     Serial.begin(115200);
     
-
     // Configuración Batería
     pinMode(34, INPUT); // Pin analógico de la batería
     
@@ -49,15 +47,21 @@ void setup() {
     sensorTemp1.inicializar();
     sensorTemp2.inicializar();
 
+    //GENERADOR DE FRECUENCIA DE PRUEBA 
+    int frecuenciaHz = 6;         // PWM
+    ledcSetup(0, frecuenciaHz, 8); // Configura del canal 0 
+    ledcAttachPin(27, 0);          // Asigna el canal 0 al Pin 27
+    ledcWrite(0, 127);             // Ciclo de trabajo al 50% para onda cuadrada perfecta
+
     // Configuración Inductivo (Velocidad)
     pinMode(pinSensorInductivo, INPUT);
     attachInterrupt(digitalPinToInterrupt(pinSensorInductivo), cuentaPulsos, RISING);
 
     // Configuración del temporizador
-    timer = timerBegin(0, 80, true); //un tick cada 1 microsegundo
+    timer = timerBegin(0, 80, true); // un tick cada 1 microsegundo
     timerAttachInterrupt(timer, &onTimer, true);
-    timerAlarm(timer, 1000000, true); //alarma cada 1 segundo
-
+    timerAlarmWrite(timer, 1000000, true); // alarma cada 1 segundo
+    timerAlarmEnable(timer);
 }
 
 void loop() {
@@ -81,23 +85,21 @@ void loop() {
     Serial.print(" °C | Temp2: "); Serial.print(temp2);
     Serial.print(" °C | ");
 
-
     // 3. Temporizador 
-    if (temporizadorListo) { //adentro de este if pongan todo, yo puse lo que decia abajo para q guarde la variable pero siga contando
+    if (temporizadorListo) { 
         temporizadorListo = false; // Reinicia la bandera
-        unsigned long pulsosCopiados = contadorPulsos;
+        noInterrupts();
+        pulsosCopiados = contadorPulsos;
         contadorPulsos = 0;
+        interrupts();
         velocidadKmH = pulsosCopiados * circunferencia * 3.6; // Convertir RPM a km/h
     }
 
-    /* 4. Lectura de Inductivo (Velocidad / RPM)
+    /* 4. Lectura de Inductivo (Comentado originalmente)
     unsigned long tiempoActual = millis();
     if (tiempoActual - tiempoAnteriorInductivo >= intervaloInductivo) {
-        
         noInterrupts();
         tiempoResta = tiempoActual - tiempoAnteriorInductivo;
-        
-        //unsigned long pulsosCopiados = contadorPulsos;
         pulsosCopiados = contadorPulsos;
         contadorPulsos = 0;
         interrupts();
@@ -106,17 +108,13 @@ void loop() {
         float circunferencia = 3.141592 * diametroRuedaMetros;
         float rps = rpm / 60.0;
         velocidadKmH = rps * circunferencia * 3.6;
-        
-
         tiempoAnteriorInductivo = tiempoActual;
-        */
     }
+    */
    
-    Serial.println("Tiempo Resta"); Serial.print(tiempoResta, 3);
-    //Serial.println("RPM: "); Serial.print(rpm, 1);
+    Serial.print("Tiempo Resta: "); Serial.print(tiempoResta, 3);
     Serial.print(" | Velocidad: "); Serial.print(velocidadKmH, 2);
-    Serial.print(" km/h");
-    
+    Serial.print(" km/h | Pulsos: "); 
     Serial.print(pulsosCopiados); 
     Serial.println(" s");
 
