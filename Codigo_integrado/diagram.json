@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "author": "Tomas",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "wokwi-ds18b20", "id": "temp1", "top": 20, "left": -150, "attrs": {} },
+    { "type": "wokwi-ds18b20", "id": "temp2", "top": 70, "left": -150, "attrs": {} }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "esp:27", "esp:26", "green", [ "v0" ] ],
+    [ "temp1:DQ", "esp:25", "blue", [] ],
+    [ "temp1:VDD", "esp:3V3", "red", [] ],
+    [ "temp1:GND", "esp:GND", "black", [] ],
+    [ "temp2:DQ", "esp:33", "blue", [] ],
+    [ "temp2:VDD", "esp:3V3", "red", [] ],
+    [ "temp2:GND", "esp:GND", "black", [] ]
+  ],
+  "dependencies": {}
+}
