@@ -15,18 +15,30 @@ float rpm = 0.0;
 float velocidadKmH = 0.0;
 
 // ISR para el sensor inductivo
-int tiempoActual = 0;
-int tiempoInicio = 0;
-int tiempoGuardado = 0;
+unsigned long tiempoActual = 0;
+bool pulsoNuevo = false;
+volatile bool primerPulso = true;
+volatile unsigned long tiempoInicio = 0;
+volatile unsigned long tiempoGuardado = 0;
+
+const byte TAMANO_VECTOR = 10;
+float lecturasVelocidad[TAMANO_VECTOR] = {0.0};
+byte indiceLectura = 0;
+byte totalLecturas = 0;
+
 void IRAM_ATTR cuentaPulsos() {
-    millis();
     tiempoActual = millis();
-    tiempoGuardado = tiempoActual - tiempoInicio;
-    velocidadKmH = 1539.38 / tiempoGuardado; // (2*pi*r)/T
-    Serial.print(" | Velocidad: "); Serial.print(velocidadKmH, 2);
-    Serial.print(" km/h");
-    tiempoInicio = millis();
+    if (primerPulso) {
+        tiempoInicio = tiempoActual;
+        primerPulso = false;
+    } 
+    else {
+        tiempoGuardado = tiempoActual - tiempoInicio;
+        tiempoInicio = tiempoActual;
+        pulsoNuevo = true;
+    }
 }
+
 
 
 
@@ -62,7 +74,7 @@ void loop() {
     Serial.print(" V | ADC: "); Serial.print(datos.adc);
     Serial.print(" | Tensión Batería: "); Serial.print(datos.voltajeBateria, 2);
     Serial.print(" V | ");
-*/
+
     // 2. Lectura de Temperatura y Promedio
     sensorTemp1.solicitarTemperaturas();
     sensorTemp2.solicitarTemperaturas();
@@ -75,6 +87,56 @@ void loop() {
     Serial.print(" °C | Temp2: "); Serial.print(temp2);
     Serial.print(" °C | ");
 
-*/ 
-    delay(100);
+*/
+    // 3. Lectura de Velocidad
+    if (pulsoNuevo) {
+        noInterrupts();
+        unsigned long tiempoCopia = tiempoGuardado;
+        pulsoNuevo = false;
+        interrupts();
+
+        // Calcular velocidad en km/h
+        if (tiempoCopia > 100) {
+            velocidadKmH = (1539.38 / tiempoCopia) * 3.6; // (2*pi*r)/T
+
+            //vector para almacenar las últimas 10 lecturas de velocidad
+            lecturasVelocidad[indiceLectura] = velocidadKmH;
+            indiceLectura = (indiceLectura + 1) % TAMANO_VECTOR;
+
+        if (totalLecturas < TAMANO_VECTOR) 
+            {
+                totalLecturas++;
+            }
+
+        if (totalLecturas == TAMANO_VECTOR/2)
+            {
+            Serial.print("Velocidad Actual (");
+            Serial.print(velocidadKmH, 2);
+            Serial.println(" km/h)");
+            }
+        if (totalLecturas == TAMANO_VECTOR) 
+            {
+            // Cálculo del promedio con un bucle FOR
+            totalLecturas = 0;
+            float suma = 0.0;
+            for (byte i = 0; i < TAMANO_VECTOR; i++) {
+                suma += lecturasVelocidad[i];
+                }
+            float promedioVelocidad = suma / TAMANO_VECTOR;
+
+            Serial.print("Velocidad Promedio (");
+
+            Serial.print(promedioVelocidad, 2);
+            Serial.println(" km/h)");
+            }   
+
+        }
+    }
+if (millis() - tiempoActual > 7000) 
+    {
+    primerPulso = true;
+    Serial.println("Velocidad Actual (0.00 km/h)");
+    totalLecturas = 0; // Reinicia las muestras del promedio
+    indiceLectura = 0;
+    }   
 }
