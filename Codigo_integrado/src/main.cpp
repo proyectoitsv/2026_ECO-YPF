@@ -8,39 +8,42 @@ const int pulsosPorRevolucion = 1;
 const float diametroRuedaMetros = 0.49;
 
 
-float tiempoSegundos1 = 0.0f; // Variable global para almacenar el tiempo transcurrido en segundos
+
+float tiempoResta=0;
+
+
 
 float circunferencia = 3.141592 * diametroRuedaMetros;
 float rpm = 0.0;
 float velocidadKmH = 0.0;
 
 // ISR para el sensor inductivo
-unsigned long tiempoActual = 0;
-bool pulsoNuevo = false;
-volatile bool primerPulso = true;
-volatile unsigned long tiempoInicio = 0;
-volatile unsigned long tiempoGuardado = 0;
 
-const byte TAMANO_VECTOR = 10;
-float lecturasVelocidad[TAMANO_VECTOR] = {0.0};
-byte indiceLectura = 0;
-byte totalLecturas = 0;
-
+volatile unsigned long contadorPulsos = 0;
+unsigned long pulsosCopiados = 0;
+volatile bool tiempoIniciado = false; //sincroniza la base de tiempo con el primer pulso del sensor inductivo
 void IRAM_ATTR cuentaPulsos() {
-    tiempoActual = millis();
-    if (primerPulso) {
-        tiempoInicio = tiempoActual;
-        primerPulso = false;
-    } 
-    else {
-        tiempoGuardado = tiempoActual - tiempoInicio;
-        tiempoInicio = tiempoActual;
-        pulsoNuevo = true;
+    if (tiempoIniciado == true)
+    {
+        contadorPulsos++;
+    }
+    else
+    {
+        tiempoIniciado = true;
+        contadorPulsos = 1; // Inicia el contador de pulsos
+        timerWrite(timer, 0); //reinicio timer
+        timerAlarmEnable(timer); //habilito timer
     }
 }
 
+//ISR para el temporizador
+hw_timer_t *timer = NULL;
+volatile bool temporizadorListo = false;
 
-
+void IRAM_ATTR onTimer() {
+    timerAlarmDisable(timer);
+    temporizadorListo = true; 
+}
 
 // Objetos globales de temperatura
 GestorTemperatura sensorTemp1(25); // Primer sensor
@@ -64,6 +67,11 @@ void setup() {
     pinMode(pinSensorInductivo, INPUT);
     attachInterrupt(digitalPinToInterrupt(pinSensorInductivo), cuentaPulsos, RISING);
 
+    // Configuración del temporizador
+    timer = timerBegin(0, 80, true); //un tick cada 1 microsegundo
+    timerAttachInterrupt(timer, &onTimer, true);
+    timerAlarmWrite(timer, 1000000, true); //alarma cada 1.5 segundos
+    timerAlarmEnable(timer);
 }
 
 void loop() {
@@ -88,55 +96,25 @@ void loop() {
     Serial.print(" °C | ");
 
 */
-    // 3. Lectura de Velocidad
-    if (pulsoNuevo) {
-        noInterrupts();
-        unsigned long tiempoCopia = tiempoGuardado;
-        pulsoNuevo = false;
-        interrupts();
-
-        // Calcular velocidad en km/h
-        if (tiempoCopia > 100) {
-            velocidadKmH = (1539.38 / tiempoCopia) * 3.6; // (2*pi*r)/T
-
-            //vector para almacenar las últimas 10 lecturas de velocidad
-            lecturasVelocidad[indiceLectura] = velocidadKmH;
-            indiceLectura = (indiceLectura + 1) % TAMANO_VECTOR;
-
-        if (totalLecturas < TAMANO_VECTOR) 
-            {
-                totalLecturas++;
-            }
-
-        if (totalLecturas == TAMANO_VECTOR/2)
-            {
-            Serial.print("Velocidad Actual (");
-            Serial.print(velocidadKmH, 2);
-            Serial.println(" km/h)");
-            }
-        if (totalLecturas == TAMANO_VECTOR) 
-            {
-            // Cálculo del promedio con un bucle FOR
-            totalLecturas = 0;
-            float suma = 0.0;
-            for (byte i = 0; i < TAMANO_VECTOR; i++) {
-                suma += lecturasVelocidad[i];
-                }
-            float promedioVelocidad = suma / TAMANO_VECTOR;
-
-            Serial.print("Velocidad Promedio (");
-
-            Serial.print(promedioVelocidad, 2);
-            Serial.println(" km/h)");
-            }   
-
-        }
+    // 3. Temporizador 
+    
+    if (temporizadorListo) { 
+        noInterrupts(); // Deshabilita interrupciones para evitar conflict
+        
+        pulsosCopiados = contadorPulsos;
+        contadorPulsos = 0;
+        temporizadorListo = false; // Reinicia la bandera
+        tiempoIniciado = false; // Reinicia la bandera
+        interrupts(); 
+        velocidadKmH = (pulsosCopiados * circunferencia * 3.6) /1.5; // Convertir RPM a km/h
     }
-if (millis() - tiempoActual > 7000) 
-    {
-    primerPulso = true;
-    Serial.println("Velocidad Actual (0.00 km/h)");
-    totalLecturas = 0; // Reinicia las muestras del promedio
-    indiceLectura = 0;
-    }   
+    
+    //Serial.println("RPM: "); Serial.print(rpm, 1);
+    Serial.print(" | Velocidad: "); Serial.print(velocidadKmH, 2);
+    Serial.print(" km/h");
+    
+        Serial.print(" | Vueltas: "); Serial.println(pulsosCopiados); 
+
+
+    delay(100);
 }
