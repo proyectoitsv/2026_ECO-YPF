@@ -8,30 +8,59 @@ const int pulsosPorRevolucion = 1;
 const float diametroRuedaMetros = 0.49;
 
 
-float tiempoSegundos1 = 0.0f; // Variable global para almacenar el tiempo transcurrido en segundos
 
-volatile unsigned long contadorPulsos = 0;
-unsigned long tiempoAnteriorInductivo = 0;
-const unsigned long intervaloInductivo = 1000; // Recálculo cada 1 segundo
-unsigned long pulsosCopiados = 0;
 float tiempoResta=0;
 
-float circunferencia = 3.141592 * diametroRuedaMetros;
+
+
+float circunferencia = PI * diametroRuedaMetros;
 float rpm = 0.0;
 float velocidadKmH = 0.0;
 
 // ISR para el sensor inductivo
+portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED; // Protege las variables compartidas
+volatile bool contando = false; 
+volatile bool temporizadorListo = false;
+u_int64_t tiempo = 0;
+
+
+hw_timer_t *timer = NULL;
+volatile unsigned long contadorPulsos = 0;
+volatile unsigned long pulsosCopiados = 0;
+volatile bool tiempoIniciado = false; //sincroniza la base de tiempo con el primer pulso del sensor inductivo
 void IRAM_ATTR cuentaPulsos() {
-    contadorPulsos++;
+
+    if (!contando && !temporizadorListo) {
+        contando = true;
+        contadorPulsos = 1; 
+        
+        
+        timerWrite(timer, 0);       
+        timerAlarmEnable(timer);  
+        timerStart(timer);          
+    } 
+
+    else if (contando) {
+        portENTER_CRITICAL_ISR(&mux);
+        contadorPulsos++;
+        portEXIT_CRITICAL_ISR(&mux);
+    
+    }
 }
 
-
 //ISR para el temporizador
-hw_timer_t *timer = NULL;
-volatile bool temporizadorListo = false;
+
+
+
 
 void IRAM_ATTR onTimer() {
-    temporizadorListo = true; 
+    
+    timerStop(timer);             
+    timerAlarmDisable(timer);      
+    digitalWrite(12, !digitalRead(12)); 
+    contando = false;              
+    temporizadorListo = true;      
+    
 }
 
 // Objetos globales de temperatura
@@ -46,6 +75,7 @@ void setup() {
 
     // Configuración Batería
     pinMode(34, INPUT); // Pin analógico de la batería
+    pinMode(12, OUTPUT);  
     
     
     // Configuración Temperatura
@@ -59,8 +89,9 @@ void setup() {
     // Configuración del temporizador
     timer = timerBegin(0, 80, true); //un tick cada 1 microsegundo
     timerAttachInterrupt(timer, &onTimer, true);
-    timerAlarmWrite(timer, 1000000, true); //alarma cada 1.5 segundos
-    timerAlarmEnable(timer);
+    timerAlarmWrite(timer, 1000000, false); //alarma cada 1 segundos
+    timerStop(timer);         
+    timerAlarmDisable(timer);
 }
 
 void loop() {
@@ -71,7 +102,7 @@ void loop() {
     Serial.print(" V | ADC: "); Serial.print(datos.adc);
     Serial.print(" | Tensión Batería: "); Serial.print(datos.voltajeBateria, 2);
     Serial.print(" V | ");
-*/
+
     // 2. Lectura de Temperatura y Promedio
     sensorTemp1.solicitarTemperaturas();
     sensorTemp2.solicitarTemperaturas();
@@ -86,20 +117,31 @@ void loop() {
 
 */
     // 3. Temporizador 
-    if (temporizadorListo) { //adentro de este if pongan todo, yo puse lo que decia abajo para q guarde la variable pero siga contando
 
-        temporizadorListo = false; // Reinicia la bandera
-         pulsosCopiados = contadorPulsos;
+     
+    
+    
+    if (temporizadorListo) { 
+       
+        
+        pulsosCopiados = contadorPulsos;
         contadorPulsos = 0;
-         velocidadKmH = (pulsosCopiados * circunferencia * 3.6) /1.5; // Convertir RPM a km/h
+
+        Serial.print(" | pulsos: "); Serial.println(pulsosCopiados); 
+
+            velocidadKmH = ((pulsosCopiados / 4) * circunferencia * 3.6) * 14 / 20; // Convertir RPM a km/h
+
+        Serial.print(" | Velocidad: "); Serial.print(velocidadKmH, 2);
+        Serial.print(" km/h");   
+        Serial.print(" | pulsos1: "); Serial.println(pulsosCopiados); 
+        Serial.print(" | tiempo: "); Serial.println((u_int32_t)tiempo);
+
+
+         
+        temporizadorListo = false; // Reinicia la bandera
     }
-    
-    //Serial.println("RPM: "); Serial.print(rpm, 1);
-    Serial.print(" | Velocidad: "); Serial.print(velocidadKmH, 2);
-    Serial.print(" km/h");
-    
-        Serial.print(" | Vueltas: "); Serial.println(pulsosCopiados); 
+
+   
 
 
-    delay(100);
 }
