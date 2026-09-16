@@ -1,17 +1,17 @@
 #include "Tension.h"
 
 // --- PARÁMETROS CONFIGURABLES ---
-const float VOLTAJE_MIN     = 0.576;   // 0% de batería (Voltios en pin)
-const float VOLTAJE_MAX     = 1.970;   // 100% de batería (Voltios en pin)
+const float VOLTAJE_MIN     = 0.450;   // 0% de batería (Voltios en pin)
+const float VOLTAJE_MAX     = 1.25;   // 100% de batería (Voltios en pin)
 const float BATT_MIN        = 48.0;    // Tensión real mínima de la batería (V)
-const float BATT_MAX        = 56.0;    // Tensión real máxima de la batería (V)
+const float BATT_MAX        = 52.0;    // Tensión real máxima de la batería (V)
 const int   PIN_ANALOG      = 34;      // Pin analógico de lectura
 
 // --- PARÁMETROS DE TIEMPO Y FILTRADO ---
 const unsigned long TIEMPO_MUESTRA  = 50;     // Tiempo de muestreo 
-const unsigned long TIEMPO_REPORTE  = 2000;   // Actualización 
-const int           CANT_MUESTRAS   = 10;     // Promedio de 10 muestras
-const float         PASO_MINIMO_V   = 0.100;  // Umbral de cambio de 100 mV (0.1 V)
+const unsigned long TIEMPO_REPORTE  = 1000;   // Actualización 
+const int           CANT_MUESTRAS   = 5;     // Promedio de 10 muestras
+const float         PASO_MINIMO_V   = 0.025;  // Umbral de cambio de 25 mV (0.025 V)
 // --------------------------------
 
 MedidaTension leerTensionCompleta() {

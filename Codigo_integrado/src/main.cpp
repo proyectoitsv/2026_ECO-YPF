@@ -18,11 +18,11 @@ float velocidadKmH = 0.0;
 int tiempoActual = 0;
 int tiempoInicio = 0;
 int tiempoGuardado = 0;
-bool calculo = 0
+bool calculo = 0;
 void IRAM_ATTR cuentaPulsos() {
     tiempoActual = millis();
     tiempoGuardado = tiempoActual - tiempoInicio;
-    calculo = 1
+    calculo = 1;
     tiempoInicio = millis();
 }
 
@@ -55,11 +55,14 @@ void setup() {
 void loop() {
     // 1. Lectura de Batería
     MedidaTension datos = leerTensionCompleta(); 
-/*
+    
+
     Serial.print("Voltaje: "); Serial.print(datos.voltaje, 3);
-    Serial.print(" V | ADC: "); Serial.print(datos.adc);
+    Serial.print(" V | ADC: "); Serial.print(datos.adc_crudo);
     Serial.print(" | Tensión Batería: "); Serial.print(datos.voltajeBateria, 2);
     Serial.print(" V | ");
+    Serial.print(datos.porcentaje);
+    Serial.println(" % | ");
 
     // 2. Lectura de Temperatura y Promedio
     sensorTemp1.solicitarTemperaturas();
@@ -75,7 +78,7 @@ void loop() {
 
 */ 
 
-    if (calculo)
+   /* if (calculo)
         {
         if (tiempoGuardado > 30)
             {
@@ -87,5 +90,5 @@ void loop() {
             }
         calculo = 0;
         }
-    delay(100);
+    delay(100); */
 }
