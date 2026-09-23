@@ -1,4 +1,4 @@
-#include "Inductivo.h"
+/*#include "Inductivo.h"
 
 // Inicialización de la variable estática
 volatile unsigned long GestorInductivo::contadorPulsos = 0;
@@ -59,3 +59,4 @@ MedidaInductivo GestorInductivo::leerMedida() {
 
     return datos;
 }
+    */

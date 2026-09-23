@@ -1,4 +1,4 @@
-#ifndef TENSION_H
+/*#ifndef TENSION_H
 #define TENSION_H
 
 #include <Arduino.h>
@@ -14,3 +14,4 @@ struct MedidaTension {
 MedidaTension leerTensionCompleta();
 
 #endif
+*/

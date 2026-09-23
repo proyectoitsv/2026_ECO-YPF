@@ -1,4 +1,4 @@
-#ifndef INDUCTIVO_H
+/*#ifndef INDUCTIVO_H
 #define INDUCTIVO_H
 
 #include <Arduino.h>
@@ -29,3 +29,4 @@ private:
 };
 
 #endif
+*/

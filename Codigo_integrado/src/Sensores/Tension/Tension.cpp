@@ -1,4 +1,4 @@
-#include "Tension.h"
+/*#include "Tension.h"
 
 // --- PARÁMETROS CONFIGURABLES ---
 const float VOLTAJE_MIN     = 0.450;   // 0% de batería (Voltios en pin)
@@ -68,3 +68,5 @@ MedidaTension leerTensionCompleta() {
 
     return resultado;
 }
+
+*/
