@@ -57,6 +57,7 @@ void setup() {
 }
 
 void loop() {
+    /*
     // 1. Lectura de Batería
     MedidaTension datos = leerTensionCompleta();
 
@@ -69,6 +70,7 @@ void loop() {
     Serial.print(" V | ");
     Serial.print(datos.porcentaje);
     Serial.println(" % | ");
+    */
 
     // 2. Lectura de Temperatura
     sensorTemp1.solicitarTemperaturas();
@@ -106,8 +108,12 @@ void loop() {
         Serial.print("SPEED: ");
         Serial.print(datosGPS.velocidadKmH, 2);
         Serial.print(" km/h | RUMBO: ");
-        Serial.print(datosGPS.rumboGrados, 1);
-        Serial.println("°");
+        if (datosGPS.rumboValido) {
+            Serial.print(datosGPS.rumboGrados, 1);
+            Serial.println("°");
+        } else {
+            Serial.println("Sin rumbo");
+        }
 
         Serial.print("HDOP: ");
         Serial.print(datosGPS.hdop);
@@ -115,7 +121,7 @@ void loop() {
         Serial.println(datosGPS.satelites);
 
         char bufferFechaHora[30];
-        snprintf(bufferFechaHora, sizeof(bufferFechaHora), "UTC: %04d/%02d/%02d %02d:%02d:%02d",
+        snprintf(bufferFechaHora, sizeof(bufferFechaHora), "HORA ARG: %04d/%02d/%02d %02d:%02d:%02d",
                  datosGPS.anio, datosGPS.mes, datosGPS.dia,
                  datosGPS.hora, datosGPS.minuto, datosGPS.segundo);
         Serial.println(bufferFechaHora);

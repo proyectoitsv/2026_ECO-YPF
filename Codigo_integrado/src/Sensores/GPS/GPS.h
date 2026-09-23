@@ -10,6 +10,7 @@ struct DatosGPS {
     double   longitud;
     float    velocidadKmH;
     float    rumboGrados;
+    bool     rumboValido;   // false = vehículo detenido, sin rumbo confiable
     float    hdop;
     uint32_t satelites;
     uint16_t anio;
