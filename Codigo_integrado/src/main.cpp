@@ -58,8 +58,8 @@ void setup() {
     // Configuración GPS
     inicializarGPS();
 
-    // Configuración UART1 (RX=4, TX=5)
-    SerialUART1.begin(9600, SERIAL_8N1, 4, 5);
+    // Configuración UART1 (RX=13, TX=14)
+    SerialUART1.begin(9600, SERIAL_8N1, 13, 14);
 }
 
 void loop() {
