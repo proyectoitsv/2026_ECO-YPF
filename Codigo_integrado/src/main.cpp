@@ -1,232 +1,286 @@
 #include <Arduino.h>
 #include <math.h>
+#include <string.h>
+#include <ctype.h>
 
-#include "Sensores/Corriente/Corriente.h"
-#include "Sensores/Energia/Energia.h"
-#include "Sensores/GPS/GPS.h"
-#include "Sensores/Inductivo(velocidad)/Inductivo.h"
-#include "Sensores/Temperatura/Temperatura.h"
+#include "Configuracion.h"
 #include "Sensores/Tension/Tension.h"
+#include "Sensores/Corriente/Corriente.h"
+#include "Sensores/Energia/SesionEnergia.h"
+#include "Sensores/GPS/GPS.h"
+#include "Sensores/Temperatura/Temperatura.h"
 
-// Cambiar solo esta línea para elegir la etapa de prueba:
-// 0: 48 V y salida ACS758 de 2,840 V simuladas en software (8,5 A).
-// 1: 48 V fijos y 2,840 V aplicados al GPIO35; offset nominal de 2,500 V.
-// 2: 48 V fijos y ACS758 real en GPIO35, calibrado sin corriente al arrancar.
-// 3: ACS758 real en GPIO35 y módulo de tensión real en GPIO34.
-enum class ModoEnergia : uint8_t {
-    REFERENCIA_SIMULADA = 0,
-    VOLTAJE_ADC_INYECTADO = 1,
-    ACS_TENSION_FIJA = 2,
-    SENSORES_REALES = 3
-};
-constexpr ModoEnergia MODO_ENERGIA = ModoEnergia::REFERENCIA_SIMULADA;
+SesionEnergia sesion(Config::CAPACIDAD_PACK_AH, Config::TENSION_NOMINAL_PACK_V);
+MedidaTension tension = {};
+MedidaCorriente corriente = {};
+bool entradasValidas = false;
+const char* errorConfig = nullptr;
+uint32_t ultimoReporteMs = 0;
 
-const float TENSION_PACK_FIJA_V = 48.0f;
-const float SALIDA_ACS_SIMULADA_V = 2.840f;
-const float OFFSET_ACS_NOMINAL_V = 2.500f;
-const uint32_t INTERVALO_REPORTE_MS = 1000;
-
-// Los cuatro acumuladores de 12 V están en serie: el pack sigue siendo 17 Ah.
-GestorEnergia energiaVehiculo(17.0f, 48.0f);
-EstadoEnergia ultimoEstadoEnergia = {};
-bool estadoEnergiaDisponible = false;
-uint32_t ultimoTiempoEnergiaMs = 0;
-uint32_t ultimoReporteEnergiaMs = 0;
-
-// Sensores existentes del proyecto integrado.
-GestorTemperatura sensorTemp1(25);
-GestorTemperatura sensorTemp2(33);
-DatosGPS datosGPS;
-const int pinSensorInductivo = 26;
-volatile uint32_t tiempoInicioPulsoMs = 0;
-volatile uint32_t tiempoEntrePulsosMs = 0;
-volatile bool hayPulsoNuevo = false;
-
-float temperatura1C = 0.0f;
-float temperatura2C = 0.0f;
-float temperaturaPromedioC = 0.0f;
-uint32_t ultimaSolicitudTemperaturaMs = 0;
-bool conversionTemperaturaPendiente = false;
+// Sensores auxiliares de la rama original, habilitables en Configuracion.h.
+GestorTemperatura sensorTemp1(25), sensorTemp2(33);
+const uint8_t pinInductivo = 26;
+volatile uint32_t inicioPulsoMs = 0, intervaloPulsoMs = 0;
+volatile bool pulsoNuevo = false;
+uint32_t ultimaSolicitudTempMs = 0;
+bool temperaturaPendiente = false;
+float temperatura1C = 0.0f, temperatura2C = 0.0f;
 
 void IRAM_ATTR cuentaPulsos() {
     const uint32_t ahoraMs = millis();
-    tiempoEntrePulsosMs = ahoraMs - tiempoInicioPulsoMs;
-    tiempoInicioPulsoMs = ahoraMs;
-    hayPulsoNuevo = true;
+    intervaloPulsoMs = ahoraMs - inicioPulsoMs;
+    inicioPulsoMs = ahoraMs;
+    pulsoNuevo = true;
 }
 
-void imprimirEstadoEnergia(const EstadoEnergia& estado) {
-    Serial.print("Pack: "); Serial.print(estado.voltajeV, 2);
-    Serial.print(" V | Corriente: "); Serial.print(estado.corrienteA, 2);
-    Serial.print(" A | Potencia: "); Serial.print(estado.potenciaW, 2);
-    Serial.println(" W");
+bool usaTensionADC() {
+    return Config::MODO == Config::ModoEnergia::FUENTES_ANALOGICAS ||
+           Config::MODO == Config::ModoEnergia::SENSORES_REALES;
+}
+bool usaCorrienteADC() {
+    return Config::MODO != Config::ModoEnergia::REFERENCIA_SIMULADA;
+}
+bool usaACSReal() {
+    return Config::MODO == Config::ModoEnergia::SENSORES_REALES ||
+           Config::MODO == Config::ModoEnergia::ACS_TENSION_FIJA;
+}
+const char* nombreModo() {
+    switch (Config::MODO) {
+        case Config::ModoEnergia::FUENTES_ANALOGICAS: return "FUENTES_ANALOGICAS";
+        case Config::ModoEnergia::SENSORES_REALES: return "SENSORES_REALES";
+        case Config::ModoEnergia::REFERENCIA_SIMULADA: return "REFERENCIA_SIMULADA";
+        case Config::ModoEnergia::VOLTAJE_ADC_INYECTADO: return "VOLTAJE_ADC_INYECTADO";
+        case Config::ModoEnergia::ACS_TENSION_FIJA: return "ACS_TENSION_FIJA";
+    }
+    return "DESCONOCIDO";
+}
 
-    Serial.print("Ah consumidos: "); Serial.print(estado.ahConsumidos, 4);
-    Serial.print(" | Ah restantes: "); Serial.println(estado.ahRestantes, 4);
-    Serial.print("Wh consumidos: "); Serial.print(estado.whConsumidos, 2);
-    Serial.print(" | Wh restantes: "); Serial.println(estado.whRestantes, 2);
-    Serial.print("Bateria estimada: ");
-    Serial.print(estado.porcentajeBateria, 2); Serial.println(" %");
+void imprimirAyuda() {
+    Serial.println("Comandos: escribir y enviar con Enter (115200 baudios).");
+    Serial.println("iniciar / i: acumular; pausar / p: medir sin acumular.");
+    Serial.println("reiniciar / r: borrar acumulados y quedar PAUSADO.");
+    Serial.println("estado: reporte; test: prueba virtual separada (en pausa).");
+    Serial.println("calibrar: medir cero solo con ACS real, sin carga y en pausa.");
+    Serial.println("ayuda: repetir estos comandos.");
+}
+
+void imprimirEstado() {
+    Serial.print("Modo: "); Serial.print(nombreModo());
+    Serial.print(" | Sesion: "); Serial.print(sesion.activa() ? "ACTIVA" : "PAUSADA");
+    Serial.print(" | Entradas: "); Serial.println(entradasValidas ? "OK" : "NO VALIDAS");
+    if (usaTensionADC()) {
+        Serial.print("GPIO"); Serial.print(Config::PIN_TENSION);
+        Serial.print(": "); Serial.print(tension.voltajePinV, 3);
+        Serial.print(" V | Tension: ");
+        Serial.println(!tension.lista ? "ESPERANDO MUESTRAS" :
+                       tension.valida ? "OK" : "FUERA DE ESCALA");
+    }
+    if (usaCorrienteADC()) {
+        Serial.print("GPIO"); Serial.print(Config::PIN_CORRIENTE);
+        Serial.print(": "); Serial.print(corriente.voltajePinV, 3);
+        Serial.print(" V | Salida sensor: "); Serial.print(corriente.voltajeSensorV, 3);
+        Serial.print(" V | Offset efectivo: "); Serial.print(corriente.offsetSensorV, 3);
+        Serial.print(" V | Corriente: ");
+        Serial.println(corriente.calibrando ? "CALIBRANDO (SIN CARGA)" :
+                       !corriente.lista ? "ESPERANDO MUESTRAS" :
+                       corriente.valida ? "OK" : "FUERA DE ESCALA");
+    }
+    const EstadoEnergia& e = sesion.obtenerEstado();
+    if (entradasValidas) {
+        Serial.print("Pack: "); Serial.print(e.voltajeV, 2);
+        Serial.print(" V | Corriente: "); Serial.print(e.corrienteA, 3);
+        Serial.print(" A | Potencia: "); Serial.print(e.potenciaW, 2); Serial.println(" W");
+    } else {
+        Serial.println("Potencia no disponible; no se acumula consumo.");
+    }
+    Serial.print("Ah consumidos: "); Serial.print(e.ahConsumidos, 4);
+    Serial.print(" | Ah restantes: "); Serial.println(e.ahRestantes, 4);
+    Serial.print("Wh consumidos: "); Serial.print(e.whConsumidos, 2);
+    Serial.print(" | Wh restantes: "); Serial.println(e.whRestantes, 2);
+    Serial.print("SOC: "); Serial.print(e.porcentajeBateria, 2);
+    Serial.print(" % | Tiempo integrado: ");
+    Serial.print(sesion.segundosIntegrados(), 1); Serial.println(" s");
+    Serial.println("--------------------------------------------");
 }
 
 void ejecutarPruebaPatron() {
-    // Prueba acelerada: 3600 intervalos simulados de 1 s, sin esperar 1 hora.
+    // Caso de aceptación FIJO del algoritmo: independiente de la calibración
+    // que el usuario configure para los sensores de su vehículo.
     GestorEnergia prueba(17.0f, 48.0f);
-    const float corrientePruebaA = corrienteDesdeVoltajeSensor(
-        SALIDA_ACS_SIMULADA_V, OFFSET_ACS_NOMINAL_V);
-    EstadoEnergia resultado = {};
-    for (int segundo = 0; segundo < 3600; ++segundo) {
-        resultado = prueba.actualizar(TENSION_PACK_FIJA_V, corrientePruebaA, 1.0f);
-    }
-
-    Serial.println("=== PRUEBA PATRON: 48 V, 2.840 V ACS, 1 h ===");
-    imprimirEstadoEnergia(resultado);
-    const bool correcto =
-        fabsf(resultado.potenciaW - 408.0f) < 0.05f &&
-        fabsf(resultado.ahConsumidos - 8.5f) < 0.01f &&
-        fabsf(resultado.ahRestantes - 8.5f) < 0.01f &&
-        fabsf(resultado.whConsumidos - 408.0f) < 0.05f &&
-        fabsf(resultado.whRestantes - 408.0f) < 0.05f &&
-        fabsf(resultado.porcentajeBateria - 50.0f) < 0.05f;
-    Serial.println(correcto ? "PRUEBA PATRON: OK" : "PRUEBA PATRON: ERROR");
-    Serial.println("============================================");
+    EstadoEnergia e = {};
+    for (int i = 0; i < 3600; ++i) e = prueba.actualizar(48.0f, 8.5f, 1.0f);
+    const bool ok = fabsf(e.potenciaW - 408.0f) < 0.05f &&
+        fabsf(e.ahConsumidos - 8.5f) < 0.01f &&
+        fabsf(e.ahRestantes - 8.5f) < 0.01f &&
+        fabsf(e.whConsumidos - 408.0f) < 0.05f &&
+        fabsf(e.whRestantes - 408.0f) < 0.05f &&
+        fabsf(e.porcentajeBateria - 50.0f) < 0.05f;
+    Serial.println("PRUEBA VIRTUAL: 48 V, 8.5 A, 3600 s simulados.");
+    Serial.print("P: "); Serial.print(e.potenciaW, 2);
+    Serial.print(" W | Ah consumidos/restantes: "); Serial.print(e.ahConsumidos, 4);
+    Serial.print(" / "); Serial.println(e.ahRestantes, 4);
+    Serial.print("Wh consumidos/restantes: "); Serial.print(e.whConsumidos, 2);
+    Serial.print(" / "); Serial.print(e.whRestantes, 2);
+    Serial.print(" | SOC: "); Serial.println(e.porcentajeBateria, 2);
+    Serial.println(ok ? "PRUEBA PATRON: OK" : "PRUEBA PATRON: ERROR");
+    Serial.println("Esta prueba no cambia los acumulados de tu sesion.");
 }
 
-void actualizarTemperaturas(uint32_t ahoraMs) {
-    // DallasTemperature se configuró sin espera bloqueante. Cada conversión
-    // de 12 bits puede tardar hasta 750 ms; se lee después de ese intervalo.
-    if (conversionTemperaturaPendiente &&
-        ahoraMs - ultimaSolicitudTemperaturaMs >= 750) {
+void ejecutarComando(const char* comando) {
+    const uint32_t ahoraMs = millis();
+    if (!strcmp(comando, "iniciar") || !strcmp(comando, "i")) {
+        if (!entradasValidas) {
+            Serial.println("No se inicia: ajustar fuentes o esperar lecturas/calibracion.");
+        } else {
+            sesion.iniciar(ahoraMs);
+            Serial.println("ACTIVA: integrando valores medidos con tiempo real.");
+        }
+    } else if (!strcmp(comando, "pausar") || !strcmp(comando, "p")) {
+        sesion.pausar(ahoraMs);
+        Serial.println("PAUSADA: las mediciones siguen; el consumo queda congelado.");
+    } else if (!strcmp(comando, "reiniciar") || !strcmp(comando, "r")) {
+        sesion.reiniciar(ahoraMs);
+        Serial.println("Acumulados en cero. Sesion PAUSADA.");
+    } else if (!strcmp(comando, "estado")) {
+        imprimirEstado();
+    } else if (!strcmp(comando, "test")) {
+        if (sesion.activa()) Serial.println("Primero enviar pausar.");
+        else ejecutarPruebaPatron();
+    } else if (!strcmp(comando, "calibrar")) {
+        if (!usaACSReal()) {
+            Serial.println("Modo con fuentes: offset fijo. Editarlo en Configuracion.h.");
+        } else if (sesion.activa()) {
+            Serial.println("Primero enviar pausar y quitar toda la carga.");
+        } else {
+            Serial.println("Calibracion iniciada: mantener corriente CERO.");
+            recalibrarSensorCorriente();
+            entradasValidas = false;
+            sesion.actualizar(0.0f, 0.0f, ahoraMs, false);
+        }
+    } else if (!strcmp(comando, "ayuda") || !strcmp(comando, "?")) {
+        imprimirAyuda();
+    } else {
+        Serial.println("Comando desconocido. Enviar ayuda.");
+    }
+}
+
+void leerComandos() {
+    // Buffer fijo y lectura por caracteres: no usa String ni esperas por línea.
+    static char buffer[24];
+    static uint8_t longitud = 0;
+    static bool desbordado = false;
+    uint8_t presupuesto = 32;
+    while (presupuesto-- && Serial.available()) {
+        const char c = Serial.read();
+        if (c == '\n' || c == '\r') {
+            if (desbordado) Serial.println("Comando demasiado largo.");
+            else if (longitud) {
+                buffer[longitud] = '\0';
+                ejecutarComando(buffer);
+            }
+            longitud = 0;
+            desbordado = false;
+        } else if (!desbordado) {
+            if (longitud + 1 < sizeof(buffer))
+                buffer[longitud++] = tolower(static_cast<unsigned char>(c));
+            else desbordado = true;
+        }
+    }
+}
+
+void actualizarAuxiliares(uint32_t ahoraMs) {
+    if (!Config::HABILITAR_SENSORES_AUXILIARES) return;
+    if (temperaturaPendiente && ahoraMs - ultimaSolicitudTempMs >= 750) {
         temperatura1C = sensorTemp1.leerTemperatura(0);
         temperatura2C = sensorTemp2.leerTemperatura(0);
-        temperaturaPromedioC = (temperatura1C + temperatura2C) / 2.0f;
-        conversionTemperaturaPendiente = false;
+        temperaturaPendiente = false;
     }
-
-    if (!conversionTemperaturaPendiente &&
-        ahoraMs - ultimaSolicitudTemperaturaMs >= 1000) {
+    if (!temperaturaPendiente && ahoraMs - ultimaSolicitudTempMs >= 1000) {
         sensorTemp1.solicitarTemperaturas();
         sensorTemp2.solicitarTemperaturas();
-        ultimaSolicitudTemperaturaMs = ahoraMs;
-        conversionTemperaturaPendiente = true;
+        ultimaSolicitudTempMs = ahoraMs;
+        temperaturaPendiente = true;
     }
-}
-
-void imprimirGPS() {
-    Serial.print("LAT: "); Serial.print(datosGPS.latitud, 6);
-    Serial.print(" | LONG: "); Serial.println(datosGPS.longitud, 6);
-    Serial.print("SPEED: "); Serial.print(datosGPS.velocidadKmH, 2);
-    Serial.print(" km/h | RUMBO: ");
-    if (datosGPS.rumboValido) {
-        Serial.print(datosGPS.rumboGrados, 1);
-        Serial.println(" grados");
-    } else {
-        Serial.println("Sin rumbo");
+    actualizarGPS();
+    if (datosGPSActualizados()) {
+        const DatosGPS gps = obtenerDatosGPS();
+        Serial.print("GPS: "); Serial.print(gps.latitud, 6);
+        Serial.print(", "); Serial.print(gps.longitud, 6);
+        Serial.print(" | km/h: "); Serial.print(gps.velocidadKmH, 2);
+        Serial.print(" | Sat: "); Serial.println(gps.satelites);
+        Serial.print("Rumbo: ");
+        if (gps.rumboValido) Serial.println(gps.rumboGrados, 1);
+        else Serial.println("Sin rumbo");
+        Serial.print("HDOP: "); Serial.println(gps.hdop);
+        char fechaHora[40];
+        snprintf(fechaHora, sizeof(fechaHora),
+                 "HORA ARG: %02u/%02u/%04u %02u:%02u:%02u",
+                 static_cast<unsigned>(gps.dia), static_cast<unsigned>(gps.mes),
+                 static_cast<unsigned>(gps.anio), static_cast<unsigned>(gps.hora),
+                 static_cast<unsigned>(gps.minuto), static_cast<unsigned>(gps.segundo));
+        Serial.println(fechaHora);
     }
-    Serial.print("HDOP: "); Serial.print(datosGPS.hdop);
-    Serial.print(" | Satelites: "); Serial.println(datosGPS.satelites);
-
-    char bufferFechaHora[30];
-    snprintf(bufferFechaHora, sizeof(bufferFechaHora),
-             "HORA ARG: %04d/%02d/%02d %02d:%02d:%02d",
-             datosGPS.anio, datosGPS.mes, datosGPS.dia,
-             datosGPS.hora, datosGPS.minuto, datosGPS.segundo);
-    Serial.println(bufferFechaHora);
 }
 
 void setup() {
-    Serial.begin(115200);
-    ejecutarPruebaPatron();
-
-    if (MODO_ENERGIA != ModoEnergia::REFERENCIA_SIMULADA) {
-        const bool calibrarOffset =
-            MODO_ENERGIA == ModoEnergia::ACS_TENSION_FIJA ||
-            MODO_ENERGIA == ModoEnergia::SENSORES_REALES;
-        if (calibrarOffset) {
-            Serial.println("Calibrando ACS758: mantener corriente en 0 A...");
-        }
-        inicializarSensorCorriente(calibrarOffset);
-        Serial.print("Offset ACS758: ");
-        Serial.print(obtenerOffsetSensorV(), 3);
-        Serial.println(" V en salida del sensor");
-        Serial.println("Corriente GPIO35 (ADC1); verificar acondicionamiento de 5 V.");
+    Serial.begin(Config::BAUDIOS_MONITOR);
+    errorConfig = Config::errorConfiguracion();
+    if (errorConfig) {
+        Serial.print("ERROR CONFIGURACION: "); Serial.println(errorConfig);
+        return;
     }
-
-    if (MODO_ENERGIA == ModoEnergia::SENSORES_REALES) {
-        pinMode(34, INPUT);  // Módulo Tension existente.
+    if (usaTensionADC()) inicializarTension();
+    if (usaCorrienteADC()) {
+        const bool calibrar = usaACSReal() && Config::CALIBRACION_CORRIENTE ==
+            Config::CalibracionCorriente::AUTOMATICA_EN_CERO;
+        inicializarSensorCorriente(calibrar);
+        if (calibrar) Serial.println("ACS real: estabilizando/calibrando SIN CARGA.");
     }
-
-    sensorTemp1.inicializar();
-    sensorTemp2.inicializar();
-    sensorTemp1.solicitarTemperaturas();
-    sensorTemp2.solicitarTemperaturas();
-    ultimaSolicitudTemperaturaMs = millis();
-    conversionTemperaturaPendiente = true;
-
-    pinMode(pinSensorInductivo, INPUT);
-    attachInterrupt(digitalPinToInterrupt(pinSensorInductivo), cuentaPulsos, RISING);
-    inicializarGPS();
-
-    // La medición acumulada comienza tras calibración e inicialización.
-    ultimoTiempoEnergiaMs = millis();
-    ultimoReporteEnergiaMs = ultimoTiempoEnergiaMs;
-    Serial.print("Modo energia: ");
-    Serial.println(static_cast<int>(MODO_ENERGIA));
+    if (Config::HABILITAR_SENSORES_AUXILIARES) {
+        sensorTemp1.inicializar();
+        sensorTemp2.inicializar();
+        sensorTemp1.solicitarTemperaturas();
+        sensorTemp2.solicitarTemperaturas();
+        ultimaSolicitudTempMs = millis();
+        temperaturaPendiente = true;
+        pinMode(pinInductivo, INPUT);
+        attachInterrupt(digitalPinToInterrupt(pinInductivo), cuentaPulsos, RISING);
+        inicializarGPS();
+    }
+    ultimoReporteMs = millis();
+    sesion.reiniciar(ultimoReporteMs);
+    Serial.print("Modo seleccionado: "); Serial.println(nombreModo());
+    Serial.println("Arranque PAUSADO. Ajustar fuentes y luego enviar iniciar.");
+    imprimirAyuda();
 }
 
 void loop() {
-    float voltajePackV = TENSION_PACK_FIJA_V;
-    float corrienteA = corrienteDesdeVoltajeSensor(
-        SALIDA_ACS_SIMULADA_V, OFFSET_ACS_NOMINAL_V);
-    bool entradaLista = true;
-
-    if (MODO_ENERGIA != ModoEnergia::REFERENCIA_SIMULADA) {
+    if (errorConfig) return;
+    if (usaTensionADC()) tension = leerTensionCompleta();
+    if (usaCorrienteADC()) {
         actualizarSensorCorriente();
-        entradaLista = sensorCorrienteListo();
-        if (entradaLista) corrienteA = obtenerCorrienteA();
+        corriente = obtenerMedidaCorriente();
     }
-
-    if (MODO_ENERGIA == ModoEnergia::SENSORES_REALES) {
-        const MedidaTension medida = leerTensionCompleta();
-        voltajePackV = medida.voltajeBateria;
-        entradaLista = entradaLista && voltajePackV > 0.0f;
+    const uint32_t ahoraMs = millis();
+    bool tensionValida = true, corrienteValida = true;
+    float packV = Config::TENSION_REFERENCIA_V;
+    float amperes = Config::CORRIENTE_REFERENCIA_A;
+    if (usaTensionADC()) {
+        tensionValida = tension.lista && tension.valida &&
+            ahoraMs - tension.ultimaLecturaMs <= Config::MAX_ANTIGUEDAD_LECTURA_MS;
+        packV = tension.voltajeBateria;
     }
-
-    const uint32_t ahoraEnergiaMs = millis();
-    if (entradaLista) {
-        const float dtSegundos =
-            static_cast<float>(ahoraEnergiaMs - ultimoTiempoEnergiaMs) / 1000.0f;
-        ultimoTiempoEnergiaMs = ahoraEnergiaMs;
-        ultimoEstadoEnergia = energiaVehiculo.actualizar(
-            voltajePackV, corrienteA, dtSegundos);
-        estadoEnergiaDisponible = true;
-    } else {
-        // No atribuir tiempo anterior a una lectura todavía no disponible.
-        ultimoTiempoEnergiaMs = ahoraEnergiaMs;
+    if (usaCorrienteADC()) {
+        corrienteValida = corriente.lista && corriente.valida && !corriente.calibrando &&
+            ahoraMs - corriente.ultimaLecturaMs <= Config::MAX_ANTIGUEDAD_LECTURA_MS;
+        amperes = corriente.corrienteA;
     }
-
-    actualizarTemperaturas(millis());
-    actualizarGPS();
-    if (datosGPSActualizados()) {
-        datosGPS = obtenerDatosGPS();
-        imprimirGPS();
-    }
-
-    const uint32_t ahoraReporteMs = millis();
-    if (ahoraReporteMs - ultimoReporteEnergiaMs >= INTERVALO_REPORTE_MS) {
-        ultimoReporteEnergiaMs = ahoraReporteMs;
-        if (estadoEnergiaDisponible) {
-            imprimirEstadoEnergia(ultimoEstadoEnergia);
-            if (MODO_ENERGIA != ModoEnergia::REFERENCIA_SIMULADA) {
-                Serial.print("GPIO35: ");
-                Serial.print(obtenerPromedioADCmV());
-                Serial.print(" mV | Salida ACS: ");
-                Serial.print(obtenerSalidaSensorV(), 3);
-                Serial.println(" V");
-            }
-        } else {
-            Serial.println("Esperando lecturas fisicas de corriente/tension...");
-        }
-        Serial.println("--------------------------------------------");
+    entradasValidas = tensionValida && corrienteValida;
+    sesion.actualizar(packV, amperes, ahoraMs, entradasValidas);
+    leerComandos();
+    actualizarAuxiliares(ahoraMs);
+    if (ahoraMs - ultimoReporteMs >= Config::INTERVALO_REPORTE_MS) {
+        ultimoReporteMs = ahoraMs;
+        imprimirEstado();
     }
 }

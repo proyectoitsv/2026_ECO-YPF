@@ -17,8 +17,8 @@ struct EstadoEnergia {
 class GestorEnergia {
 public:
     // Para el pack actual: 4 baterías en serie = 17 Ah y 48 V nominales.
-    GestorEnergia(float capacidadPackAh = 17.0f,
-                  float tensionNominalPackV = 48.0f);
+    GestorEnergia(float capacidadPackAh,
+                  float tensionNominalPackV);
 
     // Permite iniciar desde cero o restaurar acumulados en una versión futura.
     void reiniciar(double ahConsumidosIniciales = 0.0,
