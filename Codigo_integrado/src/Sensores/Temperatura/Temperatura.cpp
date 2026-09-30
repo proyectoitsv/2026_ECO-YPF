@@ -5,6 +5,8 @@ GestorTemperatura::GestorTemperatura(uint8_t pin) : oneWire(pin), sensores(&oneW
 
 void GestorTemperatura::inicializar() {
     sensores.begin();
+    // La conversión se consulta después desde main, sin detener el loop().
+    sensores.setWaitForConversion(false);
 }
 
 void GestorTemperatura::solicitarTemperaturas() {
