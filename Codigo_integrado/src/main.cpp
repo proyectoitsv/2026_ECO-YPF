@@ -35,6 +35,9 @@ GestorTemperatura sensorTemp2(33);
 // Datos del GPS
 DatosGPS datosGPS;
 
+// --- UART1 reasignado a pines físicos ---
+HardwareSerial SerialUART1(1); // Usa el periférico UART1 del ESP32
+
 bool estadoPin = false;
 
 void setup() {
@@ -54,6 +57,9 @@ void setup() {
 
     // Configuración GPS
     inicializarGPS();
+
+    // Configuración UART1 (RX=4, TX=5)
+    SerialUART1.begin(9600, SERIAL_8N1, 4, 5);
 }
 
 void loop() {
@@ -128,4 +134,11 @@ void loop() {
 
         Serial.println("----------------------------------------");
     }
+
+    // 5. UART1 (ejemplo de uso, ajustar según el dispositivo real)
+    /*if (SerialUART1.available()) {
+        byte dato = SerialUART1.read();
+        Serial.print("UART1 recibido: ");
+        Serial.println(dato, HEX);
+    }*/
 }
