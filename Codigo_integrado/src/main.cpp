@@ -1,144 +1,58 @@
+// Firmware integrado ECO-YPF: cada sketch original es una tarea FreeRTOS.
+//
+// Tarea        Origen                              Core Prio Periodo  Stack
+// Corriente    Sensor Corriente + parte de Energia  1    4    5 ms     3072
+// PCNT         main PCNT.cpp (velocidad)            1    3    100 ms   4096
+// Energía      main tension.cpp (vigente)           1    2    20 ms    4096
+// GPS          main GPS.cpp                         0    3    20 ms    4096
+// Temperatura  GPS/PCNT/Energia (DS18B20 25 y 33)   0    1    1000 ms  3072
+//
+// Constantes (flags HABILITAR_*, prioridades, stacks, periodos) en Rtos/Rtos.h.
+// Datos entre tareas: snapshots con mutex en Rtos/Compartidos.h.
+// Serial: RX solo en Energía; TX por logSerial()/BloqueoSerial (mtxSerial).
+// Los main *.cpp originales quedan como referencia y se excluyen en platformio.ini.
 #include <Arduino.h>
-#include "Sensores/Tension/Tension.h"
-#include "Sensores/Temperatura/Temperatura.h"
-#include "Sensores/Inductivo(velocidad)/Inductivo.h"
-#include "Sensores/GPS/GPS.h"
+#include "Rtos/Rtos.h"
+#include "Rtos/Compartidos.h"
+#include "Tareas/TareaCorriente.h"
+#include "Tareas/TareaPCNT.h"
+#include "Tareas/TareaEnergia.h"
+#include "Tareas/TareaGPS.h"
+#include "Tareas/TareaTemperatura.h"
 
-// --- CONFIGURACIÓN SENSOR INDUCTIVO ---
-const int pinSensorInductivo = 26;
-const int pulsosPorRevolucion = 1;
-const float diametroRuedaMetros = 0.49;
+SemaphoreHandle_t mtxSerial = nullptr;
 
-float tiempoSegundos1 = 0.0f;
-float circunferencia = 3.141592 * diametroRuedaMetros;
-float rpm = 0.0;
-float VelocidadMs = 0.0;
-float velocidadKmH = 0.0;
-
-// ISR para el sensor inductivo
-int tiempoActual = 0;
-int tiempoInicio = 0;
-int tiempoGuardado = 0;
-bool calculo = 0;
-
-void IRAM_ATTR cuentaPulsos() {
-    tiempoActual = millis();
-    tiempoGuardado = tiempoActual - tiempoInicio;
-    calculo = 1;
-    tiempoInicio = millis();
+[[noreturn]] static void fallaCritica(const char* msg) {
+    Serial.printf("ERROR: %s. Reiniciando...\n", msg);
+    Serial.flush();
+    delay(1000);
+    ESP.restart();
+    for (;;) delay(1000);
 }
 
-// Objetos globales de temperatura
-GestorTemperatura sensorTemp1(25);
-GestorTemperatura sensorTemp2(33);
-
-// Datos del GPS
-DatosGPS datosGPS;
-
-// --- UART1 reasignado a pines físicos ---
-HardwareSerial SerialUART1(1); // Usa el periférico UART1 del ESP32
-
-bool estadoPin = false;
-
 void setup() {
-    Serial.begin(115200);
-    millis();
+    Serial.begin(Config::BAUDIOS_MONITOR);
+    mtxSerial = xSemaphoreCreateMutex();
+    if (!mtxSerial) fallaCritica("no se pudo crear mtxSerial");
+    if (!inicializarCompartidos()) fallaCritica("no se pudo crear mtxDatos");
 
-    // Configuración Batería
-    pinMode(34, INPUT);
+    logSerial("ECO-YPF integrado: arranque\n");
 
-    // Configuración Temperatura
-    sensorTemp1.inicializar();
-    sensorTemp2.inicializar();
-
-    // Configuración Inductivo (Velocidad)
-    pinMode(pinSensorInductivo, INPUT);
-    attachInterrupt(digitalPinToInterrupt(pinSensorInductivo), cuentaPulsos, RISING);
-
-    // Configuración GPS
-    inicializarGPS();
-
-    // Configuración UART1 (RX=13, TX=14)
-    SerialUART1.begin(9600, SERIAL_8N1, 13, 14);
+    struct { const char* nombre; bool (*crear)(); } tareas[] = {
+        {"Corriente",   crearTareaCorriente},
+        {"PCNT",        crearTareaPCNT},
+        {"Energia",     crearTareaEnergia},
+        {"GPS",         crearTareaGPS},
+        {"Temperatura", crearTareaTemperatura},
+    };
+    for (auto& t : tareas)
+        if (!t.crear()) {
+            Serial.printf("ERROR: no se pudo crear la tarea %s\n", t.nombre);
+            fallaCritica("falla al crear tareas (memoria insuficiente)");
+        }
 }
 
 void loop() {
-    /*
-    // 1. Lectura de Batería
-    MedidaTension datos = leerTensionCompleta();
-
-    Serial.print("Voltaje: ");
-    Serial.print(datos.voltaje, 3);
-    Serial.print(" V | ADC: ");
-    Serial.print(datos.adc_crudo);
-    Serial.print(" | Tensión Batería: ");
-    Serial.print(datos.voltajeBateria, 2);
-    Serial.print(" V | ");
-    Serial.print(datos.porcentaje);
-    Serial.println(" % | ");
-    */
-
-    // 2. Lectura de Temperatura
-    sensorTemp1.solicitarTemperaturas();
-    sensorTemp2.solicitarTemperaturas();
-
-    float temp1 = sensorTemp1.leerTemperatura(0);
-    float temp2 = sensorTemp2.leerTemperatura(0);
-    float promedio = (temp1 + temp2) / 2.0;
-
-    // 3. Lectura de Inductivo (Velocidad)
-    /* if (calculo)
-        {
-        if (tiempoGuardado > 30)
-            {
-            VelocidadMs = 1539.38 / tiempoGuardado; // (2*pi*r)/T;
-            velocidadKmH = VelocidadMs * 3600 / 1000;
-            Serial.print(" | Velocidad: "); Serial.print(velocidadKmH, 1);
-            Serial.print(" km/h");
-            Serial.print(" | Tiempo: "); Serial.println(tiempoGuardado, 2);
-            }
-        calculo = 0;
-        }
-    delay(100); */
-
-    // 4. GPS
-    actualizarGPS();
-    if (datosGPSActualizados()) {
-        datosGPS = obtenerDatosGPS();
-
-        Serial.print("LAT: ");
-        Serial.print(datosGPS.latitud, 6);
-        Serial.print(" | LONG: ");
-        Serial.println(datosGPS.longitud, 6);
-
-        Serial.print("SPEED: ");
-        Serial.print(datosGPS.velocidadKmH, 2);
-        Serial.print(" km/h | RUMBO: ");
-        if (datosGPS.rumboValido) {
-            Serial.print(datosGPS.rumboGrados, 1);
-            Serial.println("°");
-        } else {
-            Serial.println("Sin rumbo");
-        }
-
-        Serial.print("HDOP: ");
-        Serial.print(datosGPS.hdop);
-        Serial.print(" | Satélites: ");
-        Serial.println(datosGPS.satelites);
-
-        char bufferFechaHora[30];
-        snprintf(bufferFechaHora, sizeof(bufferFechaHora), "HORA ARG: %04d/%02d/%02d %02d:%02d:%02d",
-                 datosGPS.anio, datosGPS.mes, datosGPS.dia,
-                 datosGPS.hora, datosGPS.minuto, datosGPS.segundo);
-        Serial.println(bufferFechaHora);
-
-        Serial.println("----------------------------------------");
-    }
-
-    // 5. UART1 (ejemplo de uso, ajustar según el dispositivo real)
-    /*if (SerialUART1.available()) {
-        byte dato = SerialUART1.read();
-        Serial.print("UART1 recibido: ");
-        Serial.println(dato, HEX);
-    }*/
+    // Arduino ejecuta loop() en su propia tarea; no hace falta, se elimina.
+    vTaskDelete(NULL);
 }
