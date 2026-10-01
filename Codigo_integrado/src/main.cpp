@@ -13,7 +13,7 @@
 SesionEnergia sesion(Config::CAPACIDAD_PACK_AH, Config::TENSION_NOMINAL_PACK_V);
 MedidaTension tension = {};
 MedidaCorriente corriente = {};
-bool entradasValidas = false;
+bool lecturasDisponibles = false;
 const char* errorConfig = nullptr;
 uint32_t ultimoReporteMs = 0;
 
@@ -67,13 +67,13 @@ void imprimirAyuda() {
 void imprimirEstado() {
     Serial.print("Modo: "); Serial.print(nombreModo());
     Serial.print(" | Sesion: "); Serial.print(sesion.activa() ? "ACTIVA" : "PAUSADA");
-    Serial.print(" | Entradas: "); Serial.println(entradasValidas ? "OK" : "NO VALIDAS");
+    Serial.print(" | Adquisicion: ");
+    Serial.println(lecturasDisponibles ? "LEYENDO" : "ESPERANDO MUESTRAS/CALIBRACION");
     if (usaTensionADC()) {
         Serial.print("GPIO"); Serial.print(Config::PIN_TENSION);
         Serial.print(": "); Serial.print(tension.voltajePinV, 3);
         Serial.print(" V | Tension: ");
-        Serial.println(!tension.lista ? "ESPERANDO MUESTRAS" :
-                       tension.valida ? "OK" : "FUERA DE ESCALA");
+        Serial.println(tension.lista ? "LECTURA LISTA" : "ESPERANDO MUESTRAS");
     }
     if (usaCorrienteADC()) {
         Serial.print("GPIO"); Serial.print(Config::PIN_CORRIENTE);
@@ -82,16 +82,15 @@ void imprimirEstado() {
         Serial.print(" V | Offset efectivo: "); Serial.print(corriente.offsetSensorV, 3);
         Serial.print(" V | Corriente: ");
         Serial.println(corriente.calibrando ? "CALIBRANDO (SIN CARGA)" :
-                       !corriente.lista ? "ESPERANDO MUESTRAS" :
-                       corriente.valida ? "OK" : "FUERA DE ESCALA");
+                       corriente.lista ? "LECTURA LISTA" : "ESPERANDO MUESTRAS");
     }
     const EstadoEnergia& e = sesion.obtenerEstado();
-    if (entradasValidas) {
+    if (lecturasDisponibles) {
         Serial.print("Pack: "); Serial.print(e.voltajeV, 2);
         Serial.print(" V | Corriente: "); Serial.print(e.corrienteA, 3);
         Serial.print(" A | Potencia: "); Serial.print(e.potenciaW, 2); Serial.println(" W");
     } else {
-        Serial.println("Potencia no disponible; no se acumula consumo.");
+        Serial.println("Esperando primeras mediciones o calibracion.");
     }
     Serial.print("Ah consumidos: "); Serial.print(e.ahConsumidos, 4);
     Serial.print(" | Ah restantes: "); Serial.println(e.ahRestantes, 4);
@@ -129,8 +128,8 @@ void ejecutarPruebaPatron() {
 void ejecutarComando(const char* comando) {
     const uint32_t ahoraMs = millis();
     if (!strcmp(comando, "iniciar") || !strcmp(comando, "i")) {
-        if (!entradasValidas) {
-            Serial.println("No se inicia: ajustar fuentes o esperar lecturas/calibracion.");
+        if (!lecturasDisponibles) {
+            Serial.println("Esperar primeras mediciones o terminar calibracion.");
         } else {
             sesion.iniciar(ahoraMs);
             Serial.println("ACTIVA: integrando valores medidos con tiempo real.");
@@ -154,7 +153,7 @@ void ejecutarComando(const char* comando) {
         } else {
             Serial.println("Calibracion iniciada: mantener corriente CERO.");
             recalibrarSensorCorriente();
-            entradasValidas = false;
+            lecturasDisponibles = false;
             sesion.actualizar(0.0f, 0.0f, ahoraMs, false);
         }
     } else if (!strcmp(comando, "ayuda") || !strcmp(comando, "?")) {
@@ -262,21 +261,21 @@ void loop() {
         corriente = obtenerMedidaCorriente();
     }
     const uint32_t ahoraMs = millis();
-    bool tensionValida = true, corrienteValida = true;
+    bool tensionDisponible = true, corrienteDisponible = true;
     float packV = Config::TENSION_REFERENCIA_V;
     float amperes = Config::CORRIENTE_REFERENCIA_A;
     if (usaTensionADC()) {
-        tensionValida = tension.lista && tension.valida &&
-            ahoraMs - tension.ultimaLecturaMs <= Config::MAX_ANTIGUEDAD_LECTURA_MS;
+        tensionDisponible = tension.lista;
         packV = tension.voltajeBateria;
     }
     if (usaCorrienteADC()) {
-        corrienteValida = corriente.lista && corriente.valida && !corriente.calibrando &&
-            ahoraMs - corriente.ultimaLecturaMs <= Config::MAX_ANTIGUEDAD_LECTURA_MS;
+        corrienteDisponible = corriente.lista && !corriente.calibrando;
         amperes = corriente.corrienteA;
     }
-    entradasValidas = tensionValida && corrienteValida;
-    sesion.actualizar(packV, amperes, ahoraMs, entradasValidas);
+    // Solo espera el primer promedio o una calibración pedida por el usuario.
+    // El valor de la señal no detiene la integración ni se convierte en cero.
+    lecturasDisponibles = tensionDisponible && corrienteDisponible;
+    sesion.actualizar(packV, amperes, ahoraMs, lecturasDisponibles);
     leerComandos();
     actualizarAuxiliares(ahoraMs);
     if (ahoraMs - ultimoReporteMs >= Config::INTERVALO_REPORTE_MS) {

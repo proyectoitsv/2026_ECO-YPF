@@ -59,7 +59,7 @@ int main() {
     sesion.iniciar(12000);
     sesion.actualizar(48.0f, 8.5f, 12000, true);
     sesion.actualizar(48.0f, 8.5f, 13000, true);
-    sesion.actualizar(0.0f, 0.0f, 14000, false);
+    sesion.actualizar(0.0f, 0.0f, 14000, false); // Calibración sin datos disponibles.
     e = sesion.actualizar(48.0f, 8.5f, 24000, true);
     assert(cerca(e.ahConsumidos, 2 * unSegundoAh, 0.000001f));
     e = sesion.actualizar(48.0f, 8.5f, 25000, true);
@@ -74,6 +74,6 @@ int main() {
     sesion.actualizar(48.0f, 8.5f, UINT32_MAX - 500, true);
     e = sesion.actualizar(48.0f, 8.5f, 499, true);
     assert(cerca(e.ahConsumidos, unSegundoAh, 0.000001f));
-    printf("OK: valores variables, limites, pausa, reinicio, datos invalidos y millis().\n");
+    printf("OK: valores variables, limites SOC, pausa, reinicio, calibracion y millis().\n");
     return 0;
 }

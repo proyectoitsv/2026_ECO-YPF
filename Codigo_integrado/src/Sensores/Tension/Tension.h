@@ -10,14 +10,13 @@ struct MedidaTension {
     float porcentaje;      // Indicador por tensión; NO es el SOC energético.
     float voltajeBateria;  // Pack equivalente en volts.
     int adc_crudo;
-    float voltajePinV;     // Promedio antes de limitar/escalonar.
+    float voltajePinV;     // Promedio simple de todas las muestras.
     uint32_t ultimaLecturaMs;
-    bool lista;
-    bool valida;
+    bool lista;            // Ya existe al menos un promedio completo.
 };
 
-// Dos puntos de la escala del circuito existente. Sin limitar: la validez
-// de la entrada se comprueba antes de usar el resultado.
+// Dos puntos de calibración del circuito existente. La conversión es lineal;
+// fuera de esos puntos se extrapola, sin recortar ni rechazar la entrada.
 inline float tensionPackDesdeVoltajePin(float voltajePinV) {
     return Config::PACK_MIN_V +
         (voltajePinV - Config::ENTRADA_TENSION_MIN_V) *

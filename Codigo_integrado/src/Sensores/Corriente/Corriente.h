@@ -9,8 +9,7 @@ struct MedidaCorriente {
     float offsetSensorV;  // Cero efectivo; puede diferir del configurado.
     float corrienteA;
     uint32_t ultimaLecturaMs;
-    bool lista;
-    bool valida;
+    bool lista;           // Ya existe al menos un promedio completo.
     bool calibrando;
 };
 

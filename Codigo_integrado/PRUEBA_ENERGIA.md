@@ -1,6 +1,10 @@
-# Energía V2: prueba con dos fuentes y ADC reales
+# Energía V2.1: fuentes sin rechazo de lecturas ni promedio recortado
 
-Esta entrega está basada en la rama prueba_energía, commit a5d9096ae897035ccd2cbaaacbcd0e9d2254742c. El ZIP trae solo los archivos que hay que añadir o reemplazar en Codigo_integrado; no trae platformio.ini, GPS, Inductivo ni Temperatura. Conserva los módulos auxiliares de esa rama, incluyendo la conversión no bloqueante de DallasTemperature.
+Esta actualización está basada en la rama prueba_energía, commit 6537e597c4536a66191f5c15f758e6ecf8b35119. El ZIP trae solo los archivos que hay que reemplazar en Codigo_integrado; no trae platformio.ini, GPS, Inductivo ni Temperatura. Conservá tu puerto COM4.
+
+Cambios pedidos: se quitaron entradaValida(), el rechazo del grupo de muestras y la suspensión por rango/saturación/antigüedad. Se quitaron mediaRecortada(), el descarte de extremos, el escalonado y el recorte de tensión. Tensión y corriente ahora promedian todas las muestras y convierten sus valores linealmente. El monitor ya no informa FUERA DE ESCALA ni NO VALIDAS.
+
+Se mantienen los comandos, el modo de fuentes con offset fijo, la calibración no bloqueante del ACS real y el cálculo de energía con tiempo real. Solo se espera el primer promedio o la finalización de una calibración. SOC continúa limitado entre 0 y 100 %, y Ah/Wh restantes nunca son negativos. La verificación de parámetros al arrancar evita, por ejemplo, una sensibilidad cero; no valida las señales medidas.
 
 ## Copiar, compilar y cargar
 
@@ -18,7 +22,7 @@ Esta entrega está basada en la rama prueba_energía, commit a5d9096ae897035ccd2
 - Fuente de corriente equivalente: positivo a GPIO35, referencia 2,500 V para 0 A y 2,840 V para +8,5 A.
 - Referenciar las señales al GND del ESP32, verificando que las salidas de las fuentes permitan esa conexión común.
 - Medir las tensiones con un multímetro ANTES de conectar los pines. Nunca aplicar los 48–52 V de batería a GPIO34 ni una señal de 5 V a GPIO35.
-- Estos límites por software detectan algunas entradas fuera de escala; no protegen contra sobretensión eléctrica ni garantizan detectar un cable flotante.
+- Esta versión usa lo que mide el ADC sin comprobar rango o saturación. Por eso una señal mal conectada también produce un resultado y puede alterar los acumulados. El cambio de software no amplía el rango físico ni mejora la precisión del ADC.
 
 No se conectan baterías ni ACS758 para esta prueba: las fuentes imitan sus señales de entrada. No existe una secuencia temporal programada ni una duración de descarga predeterminada.
 
@@ -28,7 +32,7 @@ Enviar cada palabra con Enter; se aceptan LF, CR o CRLF y mayúsculas/minúscula
 
 | Comando | Acción |
 | --- | --- |
-| iniciar o i | Comenzar/continuar integrando las lecturas actuales; requiere entradas válidas |
+| iniciar o i | Comenzar/continuar integrando; esperar el primer promedio y terminar la calibración si corresponde |
 | pausar o p | Congelar Ah/Wh y tiempo integrado; seguir viendo volts, amperes y potencia |
 | reiniciar o r | Borrar consumo y tiempo; quedar pausado con capacidad completa |
 | estado | Mostrar el reporte inmediatamente |
@@ -36,7 +40,7 @@ Enviar cada palabra con Enter; se aceptan LF, CR o CRLF y mayúsculas/minúscula
 | calibrar | Solo en modo ACS real y en pausa: medir nuevamente el offset SIN CARGA |
 | ayuda o ? | Mostrar los comandos |
 
-El reporte sale cada segundo. Si una entrada es inválida, todavía no tiene muestras o es demasiado antigua, no se integra ese intervalo. Una sesión activa reanuda la integración cuando vuelven las lecturas válidas, sin sumar retrospectivamente el tiempo perdido. El tiempo mostrado es el que se integró, no el total desde el encendido.
+El reporte sale cada segundo. Una vez disponibles las primeras mediciones, el valor leído no suspende la integración ni se sustituye por cero por estar fuera de una escala. Se conserva el último promedio hasta completar el siguiente, integrando con el tiempo real transcurrido. La pausa manual o una calibración solicitada no se suman retrospectivamente. El tiempo mostrado es el que se integró, no el total desde el encendido.
 
 ## Qué observar
 
@@ -71,7 +75,7 @@ Editar src/Configuracion.h, recompilar y cargar. No son parámetros persistentes
 | ESTABILIZACION_CORRIENTE_MS, MUESTRAS_CALIBRACION, INTERVALO_CALIBRACION_MS | Espera y muestreo del cero, sin bloquear loop |
 | AJUSTAR_OFFSET_EN_REPOSO y parámetros asociados | Ajuste opcional en modo de calibración automática; por defecto apagado |
 | CAPACIDAD_PACK_AH, TENSION_NOMINAL_PACK_V | Capacidad y energía nominal de referencia, por defecto 17 Ah y 816 Wh |
-| Intervalos, muestras, tolerancia, escalonado y antigüedad | Respuesta/filtrado y aceptación de datos |
+| INTERVALO_TENSION_MS, MUESTRAS_TENSION, INTERVALO_CORRIENTE_MS, MUESTRAS_CORRIENTE | Frecuencia de muestreo y tamaño del promedio simple |
 | HABILITAR_SENSORES_AUXILIARES | Activar GPS, temperatura e ISR inductiva existentes; banco: false |
 
 La interpolación de tensión es:
@@ -84,7 +88,7 @@ La tensión nominal de energía es independiente del máximo medible: cambiar PA
 
 En banco, offsetEfectivo es OFFSET_CORRIENTE_V. Con ACS real y calibración automática, se espera la estabilización y se mide ese cero con corriente cero; se muestra el valor efectivo, pero no se modifica la constante del archivo. Para sensibilidad nominal de 40 mV/A se presupone el ACS alimentado a 5 V; verificarla si se usa otra alimentación.
 
-El filtro de corriente usa 15 muestras cada 5 ms, descartando dos por cada extremo (aprox. 75 ms por resultado). Tensión usa 5 muestras cada 50 ms (aprox. 250 ms). El reporte a 1 s es independiente de la integración. El nuevo modo entrega el promedio sin escalonado; si se desea, ESCALONAR_TENSION habilita pasos de 25 mV. La tolerancia de 30 mV en los extremos se limita a 48/52 V; fuera de esa banda se informa inválido en lugar de inventar una lectura de batería.
+Corriente usa un promedio simple de las 15 muestras tomadas cada 5 ms (aprox. 75 ms por resultado); tensión promedia las 5 muestras tomadas cada 50 ms (aprox. 250 ms). No se descartan extremos ni se redondea a pasos de tensión. Los puntos 0,450 y 1,250 V definen la conversión, no límites de aceptación: por ejemplo, 1,270 V se convierte en 52,1 V. El reporte a 1 s es independiente de la integración.
 
 ## Pasar a sensores reales
 
@@ -113,4 +117,4 @@ g++ -std=c++11 -Wall -Wextra -Werror -pedantic -Itest/arduino_simulado src/Senso
 
 Las pruebas de PC se ejecutan con estos comandos, no con pio test. El Build normal de PlatformIO compila solo src y no usa el Arduino simulado que está en test.
 
-Validación de esta entrega: compilación PlatformIO esp32dev exitosa con el platformio.ini existente; caso de una hora = 408 W, 8,5 Ah consumidos/restantes, 408 Wh consumidos/restantes, 50 % SOC; ruta ADC simulada de 60 s = 6,8 Wh; pausa, reinicio, tiempo variable, desbordamiento de millis(), entradas inválidas y calibración comprobados. También se cambió solo Configuracion.h en una copia de prueba y se verificó la nueva escala, offset, sensibilidad y capacidad. Los tests adjuntos usan los parámetros predeterminados. No se ejecutó en una placa física durante la preparación: la prueba eléctrica queda a cargo del montaje de banco.
+Validación de esta actualización: compilación PlatformIO esp32dev; caso de una hora = 408 W, 8,5 Ah consumidos/restantes, 408 Wh consumidos/restantes y 50 % SOC. La prueba ADC comprueba 60 s continuos = 6,8 Wh incluso con ADC crudo 4095; también comprueba promedio simple con todas las muestras, conversión sin recortes, fuentes variables y calibración. La prueba de energía cubre pausa, reinicio, tiempo variable, desbordamiento de millis() y límites de SOC. Los tests adjuntos usan los parámetros predeterminados. No se ejecutó en una placa física durante la preparación.
