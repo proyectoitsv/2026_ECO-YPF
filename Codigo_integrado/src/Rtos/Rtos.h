@@ -11,14 +11,14 @@ constexpr bool HABILITAR_TAREA_CORRIENTE   = true;
 constexpr bool HABILITAR_TAREA_ENERGIA     = true;
 constexpr bool HABILITAR_TAREA_PCNT        = true;
 constexpr bool HABILITAR_TAREA_GPS         = true;
-constexpr bool HABILITAR_TAREA_TEMPERATURA = true;
+constexpr bool HABILITAR_TAREA_TEMPERATURA = false;
 
 // Latido de los stubs (Etapa 2); las etapas siguientes lo reemplazan por lógica real.
 constexpr bool HEARTBEAT_TAREAS = true;
 constexpr uint32_t PERIODO_HEARTBEAT_MS = 5000;
 
 // Salida de diagnóstico de la base de tiempo PCNT en GPIO12 (pin de strapping: false la desactiva).
-constexpr bool PCNT_SALIDA_DIAGNOSTICO = true;
+constexpr bool PCNT_SALIDA_DIAGNOSTICO = false;
 
 // Regla heredada de main PCNT: la temperatura solo se mide mientras no hubo primer pulso
 // (vehículo detenido). false = medir siempre.

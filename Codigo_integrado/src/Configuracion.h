@@ -25,7 +25,7 @@ constexpr uint8_t MUESTRAS_TENSION = 5;
 // Corriente: ACS758-050B nominal, alimentación de 5 V.
 constexpr uint8_t PIN_CORRIENTE = 35;
 constexpr float OFFSET_CORRIENTE_V = 2.500f;
-constexpr float SENSIBILIDAD_CORRIENTE_V_POR_A = 0.040f;
+constexpr float SENSIBILIDAD_CORRIENTE_V_POR_A = 0.033f;
 // V_salida_sensor / V_entrada_GPIO35. Fuente directa en banco: 1,0.
 // Este factor NO protege eléctricamente la entrada del ESP32.
 constexpr float FACTOR_SALIDA_SENSOR_SOBRE_ADC = 1.0f;
