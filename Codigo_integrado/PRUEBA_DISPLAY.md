@@ -1,5 +1,11 @@
 # Display SOC — ECO YPF con FreeRTOS
 
+> Guía original de la integración. Para la copia con ciclo de 2 s encendido /
+> 3 s apagado, usá [LEEME_AHORRO_DISPLAY.md](../LEEME_AHORRO_DISPLAY.md).
+> La incorporación de esta nueva versión sobre Display Funcional requiere
+> reemplazar únicamente `src/Tareas/TareaDisplay.cpp`; las instrucciones de
+> incorporación originales de este documento corresponden a la etapa anterior.
+
 Integración basada en la rama `FreeRTOS`, commit `bc9f9354d588adbd6e76db94d74b2518ca29c0cc`.
 
 ## Conexión

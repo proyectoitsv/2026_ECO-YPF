@@ -57,7 +57,8 @@ BaseType_t xQueueReceive(QueueHandle_t q, void* dato, TickType_t espera) {
     }
     if (!q->llena) {
         if (ejecutandoConsumidor) {
-            assert(espera == portMAX_DELAY); throw FinPrueba{};
+            // El consumidor ahora espera un dato o el cambio de fase 2 s/3 s.
+            assert(espera > 0 && espera <= pdMS_TO_TICKS(3000)); throw FinPrueba{};
         }
         return 0;
     }
