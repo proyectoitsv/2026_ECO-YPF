@@ -1,70 +1,51 @@
 #include "Tension.h"
+#include <Arduino.h>
 
-// --- PARÁMETROS CONFIGURABLES ---
-const float VOLTAJE_MIN     = 0.450;   // 0% de batería (Voltios en pin)
-const float VOLTAJE_MAX     = 1.25;   // 100% de batería (Voltios en pin)
-const float BATT_MIN        = 48.0;    // Tensión real mínima de la batería (V)
-const float BATT_MAX        = 52.0;    // Tensión real máxima de la batería (V)
-const int   PIN_ANALOG      = 34;      // Pin analógico de lectura
+namespace {
+MedidaTension resultado = {};
+uint32_t ultimoMuestreoMs = 0;
+uint32_t sumaMiliboltios = 0, sumaAdc = 0;
+uint8_t contador = 0;
+bool configuracionValida = false;
+}
 
-// --- PARÁMETROS DE TIEMPO Y FILTRADO ---
-const unsigned long TIEMPO_MUESTRA  = 50;     // Tiempo de muestreo 
-const unsigned long TIEMPO_REPORTE  = 1000;   // Actualización 
-const int           CANT_MUESTRAS   = 5;     // Promedio de 10 muestras
-const float         PASO_MINIMO_V   = 0.025;  // Umbral de cambio de 25 mV (0.025 V)
-// --------------------------------
+void inicializarTension() {
+    configuracionValida = Config::errorConfiguracion() == nullptr;
+    resultado = {};
+    sumaMiliboltios = sumaAdc = 0;
+    contador = 0;
+    ultimoMuestreoMs = millis() - Config::INTERVALO_TENSION_MS;
+    if (!configuracionValida) return;
+    pinMode(Config::PIN_TENSION, INPUT);
+    analogReadResolution(Config::RESOLUCION_ADC_BITS);
+    analogSetPinAttenuation(Config::PIN_TENSION, ADC_11db);
+}
 
 MedidaTension leerTensionCompleta() {
-    // Variables estáticas para mantener el estado entre llamadas consecutivas en el loop()
-    static MedidaTension resultado = {0};
-    static float ultimoVoltajeReportado = -1.0;
+    if (!configuracionValida) return resultado;
+    const uint32_t ahoraMs = millis();
+    if (ahoraMs - ultimoMuestreoMs < Config::INTERVALO_TENSION_MS) return resultado;
+    ultimoMuestreoMs = ahoraMs;
+    const uint32_t milivoltios = analogReadMilliVolts(Config::PIN_TENSION);
+    const uint16_t adc = analogRead(Config::PIN_TENSION);
+    // El ADC crudo se conserva solo como dato de diagnóstico/compatibilidad.
+    // No se usa para rechazar ni bloquear la conversión en milivoltios.
+    sumaMiliboltios += milivoltios;
+    sumaAdc += adc;
+    if (++contador < Config::MUESTRAS_TENSION) return resultado;
 
-    static unsigned long ultimoMuestreo = 0;
-    static unsigned long ultimoReporte  = 0;
-
-    static long acumMiliboltios = 0;
-    static int  contadorMuestras = 0;
-    static float voltajePromedioTemp = 0.0;
-
-    unsigned long tiempoActual = millis();
-
-    // 1. Muestreo no bloqueante (Cada 50 ms)
-    if (tiempoActual - ultimoMuestreo >= TIEMPO_MUESTRA) {
-        ultimoMuestreo = tiempoActual;
-
-        acumMiliboltios += analogReadMilliVolts(PIN_ANALOG);
-        contadorMuestras++;
-
-        // Al acumular 10 muestras, calculamos el promedio puntual
-        if (contadorMuestras >= CANT_MUESTRAS) {
-            voltajePromedioTemp = (acumMiliboltios / (float)CANT_MUESTRAS) / 1000.0;
-            acumMiliboltios = 0;
-            contadorMuestras = 0;
-        }
-    }
-
-    // 2. Evaluación y reporte (Cada 2 segundos)
-    if (tiempoActual - ultimoReporte >= TIEMPO_REPORTE) {
-        ultimoReporte = tiempoActual;
-
-        // Evalúa si el cambio es superior a 100 mV (0.1 V) o si es la primera lectura
-        if (ultimoVoltajeReportado < 0 || abs(voltajePromedioTemp - ultimoVoltajeReportado) >= PASO_MINIMO_V) {
-            
-            // Redondeo/escalonado a pasos exactos de 100 mV (0.1 V)
-            float voltajeEscalonado = round(voltajePromedioTemp / PASO_MINIMO_V) * PASO_MINIMO_V;
-            ultimoVoltajeReportado = voltajeEscalonado;
-
-            // Mapeo e interpolación
-            float voltajeLimpio = constrain(voltajeEscalonado, VOLTAJE_MIN, VOLTAJE_MAX);
-            float proporcion = (voltajeLimpio - VOLTAJE_MIN) / (VOLTAJE_MAX - VOLTAJE_MIN);
-
-            // Asignación de resultados finales
-            resultado.voltaje = voltajeEscalonado;
-            resultado.porcentaje = constrain(proporcion * 100.0, 0.0, 100.0);
-            resultado.voltajeBateria = proporcion * (BATT_MAX - BATT_MIN) + BATT_MIN;
-            resultado.adc_crudo = analogRead(PIN_ANALOG);
-        }
-    }
-
+    resultado.voltajePinV = sumaMiliboltios /
+        (1000.0f * Config::MUESTRAS_TENSION);
+    resultado.adc = resultado.adc_crudo = sumaAdc / Config::MUESTRAS_TENSION;
+    resultado.ultimaLecturaMs = ahoraMs;
+    resultado.lista = true;
+    resultado.voltaje = resultado.voltajePinV;
+    resultado.voltajeBateria = tensionPackDesdeVoltajePin(resultado.voltajePinV);
+    // Indicador antiguo de escala: no es el SOC calculado desde Ah.
+    resultado.porcentaje = 100.0f *
+        (resultado.voltajePinV - Config::ENTRADA_TENSION_MIN_V) /
+        (Config::ENTRADA_TENSION_MAX_V - Config::ENTRADA_TENSION_MIN_V);
+    contador = 0;
+    sumaMiliboltios = sumaAdc = 0;
     return resultado;
 }

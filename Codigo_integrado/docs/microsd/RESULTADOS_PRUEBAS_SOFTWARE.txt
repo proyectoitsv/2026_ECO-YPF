@@ -1,0 +1,13 @@
+PRUEBA registro
+OK: UTC/Argentina, perdida/reajuste de hora, medias ponderadas/cobertura, archivos unicos, rename, parcial, CSV 71 columnas, ceros, temperaturas y regresion energetica.
+sizeof(RegistroFila) host=584 encabezado=1057 fila_representativa=381 fila_extrema=1699
+PRUEBA tareas_sd
+metadatos_simulados_con_cierre_bytes=1487
+OK: tareas reales de captura/SD, cola llena descarta nuevo, ausencia/reintento, timestamps diferidos, cierre, nueva sesion y escritura parcial con recuperacion.
+PRUEBA display
+OK: Energía -> cola -> Display; SOC 50 %, UART TX13/RX14, modo manual, sobrescritura, límites y ausencia de reenvíos.
+PRUEBA gps
+OK: NMEA real, hora sin fix, medianoche GP/GN, RMC vacio, edades por magnitud, perdida/recuperacion y UART sin espera.
+PRUEBA temperatura
+OK: tarea de temperatura real, conversiones paralelas 750 ms, periodo 5 s sin condicion de movimiento, desconexion individual y rechazo parasitario.
+RESULTADO: 5 grupos de pruebas de software aprobados. Sin ensayos fisicos.

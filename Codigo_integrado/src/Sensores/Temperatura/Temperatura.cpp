@@ -5,6 +5,9 @@ GestorTemperatura::GestorTemperatura(uint8_t pin) : oneWire(pin), sensores(&oneW
 
 void GestorTemperatura::inicializar() {
     sensores.begin();
+    parasitaria = sensores.isParasitePowerMode();
+    sensores.setResolution(12);
+    sensores.setWaitForConversion(false);
 }
 
 void GestorTemperatura::solicitarTemperaturas() {
