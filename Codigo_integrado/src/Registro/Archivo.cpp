@@ -9,7 +9,7 @@ bool nombreLibre(char* ruta, size_t n, const BackendArchivo& b, int64_t utc, uin
         int k;
         if (!largos) k=snprintf(ruta,n,"/R%07u.CSV",sufijo);
         else if (utc<=0) k=snprintf(ruta,n,"/Prueba_SIN_HORA_%06u_P%03u.csv",sufijo,parte);
-        else k=snprintf(ruta,n,"/Prueba_%02d-%02d-%04d_%02d-%02d-%02d_%03u_P%03u.csv",f.dia,f.mes,f.anio,f.hora,f.minuto,f.segundo,sufijo,parte);
+        else k=snprintf(ruta,n,"/Prueba_%04d-%02d-%02d_%02d-%02d-%02d_%03u_P%03u.csv",f.anio,f.mes,f.dia,f.hora,f.minuto,f.segundo,sufijo,parte);
         if (k<0 || size_t(k)>=n) return false;
         if (!b.existe(b.contexto,ruta)) return true;
     }
