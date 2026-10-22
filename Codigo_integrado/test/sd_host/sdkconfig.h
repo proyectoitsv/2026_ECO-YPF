@@ -1,0 +1,3 @@
+#pragma once
+#define CONFIG_FATFS_LFN_STACK 1
+#define CONFIG_FATFS_MAX_LFN 255

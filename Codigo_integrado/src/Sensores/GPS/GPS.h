@@ -19,9 +19,11 @@ struct DatosGPS {
     uint8_t  hora;
     uint8_t  minuto;
     uint8_t  segundo;
+    bool velocidadValida, hdopValido, satelitesValidos;
+    uint64_t posicionUs, velocidadUs, rumboUs, hdopUs, satelitesUs;
 };
 
-// Configura Serial2, espera al GPS y envía el comando de ahorro de energía
+// Configura Serial2 sin esperar. El comando ECO se envía al cumplirse 2 s.
 void inicializarGPS();
 
 // Debe llamarse en cada loop(). Lee lo disponible en Serial2 (no bloquea).
