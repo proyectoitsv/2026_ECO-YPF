@@ -32,7 +32,7 @@ static DatosGPS datosActuales = {};
 static bool nuevaLectura=false, ecoEnviado=false;
 static uint32_t arranqueMs;
 const byte UBX_ECO_MODE[] PROGMEM={0xB5,0x62,0x06,0x11,0x02,0x00,0x08,0x01,0x22,0x92};
-void inicializarGPS() { Serial2.begin(9600,SERIAL_8N1,16,17); arranqueMs=millis(); }
+void inicializarGPS() { Serial2.begin(9600,SERIAL_8N1,17,16); arranqueMs=millis(); }
 static void sentenciaCompleta() {
     const uint64_t us=esp_timer_get_time();
     // Cada campo renueva su propia marca solo si llegó en una sentencia nueva:

@@ -15,7 +15,7 @@ constexpr ModoEnergia MODO = ModoEnergia::FUENTES_ANALOGICAS;
 // Tensión: dos puntos del circuito existente, no un divisor supuesto.
 constexpr uint8_t PIN_TENSION = 34;
 constexpr float ENTRADA_TENSION_MIN_V = 0.450f;
-constexpr float ENTRADA_TENSION_MAX_V = 1.250f;
+constexpr float ENTRADA_TENSION_MAX_V = 1.200f;
 constexpr float PACK_MIN_V = 48.0f;
 constexpr float PACK_MAX_V = 52.0f;
 constexpr uint32_t INTERVALO_TENSION_MS = 50;

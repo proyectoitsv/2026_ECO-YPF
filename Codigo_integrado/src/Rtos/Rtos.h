@@ -12,7 +12,7 @@ constexpr bool HABILITAR_TAREA_CORRIENTE   = true;
 constexpr bool HABILITAR_TAREA_ENERGIA     = true;
 constexpr bool HABILITAR_TAREA_PCNT        = true;
 constexpr bool HABILITAR_TAREA_GPS         = true;
-constexpr bool HABILITAR_TAREA_TEMPERATURA = true;
+constexpr bool HABILITAR_TAREA_TEMPERATURA = false;
 constexpr bool HABILITAR_TAREA_DISPLAY     = true;
 
 // Diagnóstico periódico opcional; apagado durante el uso normal.
