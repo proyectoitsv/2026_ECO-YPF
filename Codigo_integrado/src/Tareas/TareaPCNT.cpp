@@ -24,7 +24,7 @@
 
 namespace {
 // ---------------- CONFIGURACION MECANICA ----------------
-constexpr int pinSensorInductivo = 26;
+constexpr int pinSensorInductivo = 32;
 constexpr int pinBaseTiempo = 12;
 
 constexpr float pulsosPorRevolucionMotor = 8.0f;
