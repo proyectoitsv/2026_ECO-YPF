@@ -14,6 +14,11 @@ struct MedidaCorriente {
 };
 
 inline float corrienteDesdeVoltajeSensor(float salidaV, float offsetV) {
+    // El margen se configura en el pin y se lleva a la escala del sensor.
+    const float margenV = Config::MARGEN_CERO_CORRIENTE_V *
+                          Config::FACTOR_SALIDA_SENSOR_SOBRE_ADC;
+    if (salidaV >= offsetV - margenV && salidaV <= offsetV + margenV)
+        return 0.0f;
     return Config::SIGNO_CORRIENTE * (salidaV - offsetV) /
            Config::SENSIBILIDAD_CORRIENTE_V_POR_A;
 }

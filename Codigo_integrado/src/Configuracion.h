@@ -10,7 +10,7 @@ enum class ModoEnergia {
     FUENTES_ANALOGICAS, SENSORES_REALES, REFERENCIA_SIMULADA,
     VOLTAJE_ADC_INYECTADO, ACS_TENSION_FIJA
 };
-constexpr ModoEnergia MODO = ModoEnergia::FUENTES_ANALOGICAS;
+constexpr ModoEnergia MODO = ModoEnergia::SENSORES_REALES;
 
 // Tensión: dos puntos del circuito existente, no un divisor supuesto.
 constexpr uint8_t PIN_TENSION = 34;
@@ -25,7 +25,9 @@ constexpr uint8_t MUESTRAS_TENSION = 5;
 // Corriente: ACS758-050B nominal, alimentación de 5 V.
 constexpr uint8_t PIN_CORRIENTE = 35;
 constexpr float OFFSET_CORRIENTE_V = 2.500f;
-constexpr float SENSIBILIDAD_CORRIENTE_V_POR_A = 0.033f;
+// Margen alrededor del cero aprendido: +/-15 mV en GPIO35 se toman como 0 A.
+constexpr float MARGEN_CERO_CORRIENTE_V = 0.007f;
+constexpr float SENSIBILIDAD_CORRIENTE_V_POR_A = 0.040f;
 // V_salida_sensor / V_entrada_GPIO35. Fuente directa en banco: 1,0.
 // Este factor NO protege eléctricamente la entrada del ESP32.
 constexpr float FACTOR_SALIDA_SENSOR_SOBRE_ADC = 1.0f;
