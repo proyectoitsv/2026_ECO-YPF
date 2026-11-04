@@ -11,10 +11,12 @@ public:
     void inicializar();
     void solicitarTemperaturas();
     float leerTemperatura(uint8_t indice);
+    bool alimentacionParasitaria() const { return parasitaria; }
 
 private:
     OneWire oneWire;
     DallasTemperature sensores;
+    bool parasitaria = false;
 };
 
 #endif
