@@ -69,8 +69,8 @@ constexpr uint32_t BAUDIOS_MONITOR = 115200;
 constexpr uint32_t INTERVALO_REPORTE_MS = 1000;
 // COM-11441: UART1 dedicada. El display recibe desde TX GPIO13.
 // RX GPIO14 queda configurado/reservado; el display no necesita transmitir.
-constexpr uint8_t PIN_TX_DISPLAY = 13;
-constexpr uint8_t PIN_RX_DISPLAY = 14;
+constexpr uint8_t PIN_TX_DISPLAY = 14;
+constexpr uint8_t PIN_RX_DISPLAY = 13;
 constexpr uint32_t BAUDIOS_DISPLAY = 9600;
 constexpr uint8_t BRILLO_DISPLAY = 180; // 0 = mínimo; 255 = máximo.
 constexpr uint32_t ESTABILIZACION_DISPLAY_MS = 100;
