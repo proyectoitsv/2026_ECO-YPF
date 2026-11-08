@@ -1,3 +1,33 @@
+# Secuencia de velocidad y batería — Arranque-Simple-Final
+
+Versión basada en `4fe4213` (incluye techo de tensión de 53.44 V).
+
+La secuencia automática empieza vacía y repite: vacío 3 s, velocidad 2 s,
+vacío 3 s, velocidad 2 s, vacío 3 s, batería 3 s. Total: 16 segundos.
+La velocidad proviene del sensor de rueda (PCNT), con un decimal y guion:
+`27.1-`. El dato se copia a la cola existente cada 500 ms; la medición de rueda
+sigue teniendo su período de 1 s. Si cambia durante los 2 s visibles, se actualiza
+sin reiniciar el tiempo. No se agregan tareas ni se modifica la adquisición.
+
+El punto se envía por el comando UART 0x77, máscara 0x02, separado de los cuatro
+caracteres `271-`. Al mostrar batería o prueba manual se desactiva el punto.
+Sin dato de velocidad, con dato no finito o fuera de 0–99.9 km/h se muestra `----`.
+La batería mantiene el porcentaje entero. `display N` conserva la prueba manual
+en las ventanas visibles y `display auto` vuelve a la secuencia automática.
+
+Los pines se conservan del commit base: **TX GPIO14 / RX GPIO13**, 9600 baudios.
+La calibración, arranque automático, memoria de batería y registro SD no cambian.
+
+Para probar en el auto: observar dos vueltas de 16 s, mover la rueda y comprobar
+el decimal y guion; verificar que la batería permanezca 3 s sin punto decimal.
+La prueba `test/prueba_display_host.cpp` verifica con UART y reloj simulados
+los tiempos, actualización visible, períodos vacíos, prueba manual, límites,
+sobrescritura de cola y desbordamiento del reloj. No sustituye la prueba física.
+
+---
+
+## Documentación histórica (no describe esta versión)
+
 # Display SOC — ECO YPF con FreeRTOS
 
 > Guía original de la integración. Para la copia con ciclo de 2 s encendido /

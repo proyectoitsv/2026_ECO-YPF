@@ -15,9 +15,9 @@ constexpr ModoEnergia MODO = ModoEnergia::SENSORES_REALES;
 // Tensión: dos puntos del circuito existente, no un divisor supuesto.
 constexpr uint8_t PIN_TENSION = 34;
 constexpr float ENTRADA_TENSION_MIN_V = 0.550f;
-constexpr float ENTRADA_TENSION_MAX_V = 1.665f;
+constexpr float ENTRADA_TENSION_MAX_V = 1.8f;
 constexpr float PACK_MIN_V = 48.0f;
-constexpr float PACK_MAX_V = 53.44f;
+constexpr float PACK_MAX_V = 54.1f;
 constexpr uint32_t INTERVALO_TENSION_MS = 50;
 constexpr uint8_t MUESTRAS_TENSION = 5;
 // Se promedian todas las muestras y se convierte sin limitar ni escalonar.

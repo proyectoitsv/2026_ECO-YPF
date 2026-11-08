@@ -18,11 +18,14 @@ void DisplayCOM11441::setBrightness(uint8_t value) {
     serial_.write(value);
 }
 
-void DisplayCOM11441::showText(const char* text) {
+void DisplayCOM11441::showText(const char* text, uint8_t decimals) {
     if (!text) {
         clear();
         return;
     }
+    // El punto no ocupa un carácter. Al mostrar batería se apagan los puntos.
+    serial_.write(static_cast<uint8_t>(0x77));
+    serial_.write(decimals);
     // Cursor al primer dígito, sin apagar el display entre valores.
     // Siempre escribe 4 caracteres: borra dígitos sobrantes con espacios.
     serial_.write(static_cast<uint8_t>(0x79));
@@ -47,4 +50,19 @@ void DisplayCOM11441::showBatteryPercentage(int percentage) {
     else if (percentage > 100) percentage = 100;
     // Se muestra el número; el símbolo % no es un carácter estándar.
     showNumber(percentage);
+}
+
+void DisplayCOM11441::showSpeedTenths(int tenths) {
+    // Tres cifras y el guion: 271- con el punto del segundo dígito = 27.1-.
+    // El rango visible con este formato es 0.0 a 99.9 km/h.
+    if (tenths < 0 || tenths > 999) {
+        showText("----");
+        return;
+    }
+    char buffer[5] = {
+        tenths >= 100 ? static_cast<char>('0' + tenths / 100) : ' ',
+        static_cast<char>('0' + (tenths / 10) % 10),
+        static_cast<char>('0' + tenths % 10), '-', '\0'
+    };
+    showText(buffer, 0x02);
 }

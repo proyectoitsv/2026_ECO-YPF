@@ -64,10 +64,12 @@ void actualizarDisplay(uint32_t ahoraMs, bool forzar = false) {
         return;
     const EstadoEnergia& e = sesion.obtenerEstado();
     // Nunca espera al UART: copia el estado final a una cola de longitud 1.
-    // La cola de un elemento conserva el SOC más nuevo. La tarea del display
-    // decide cuándo mostrarlo y mantiene su ciclo de 2 s visibles/3 s apagado.
+    // Se copia también la última velocidad de rueda, sin volver a medirla.
+    // Display decide los tiempos; recibir datos no reinicia su secuencia.
+    const DatosVelocidad velocidad = leerVelocidad();
     publicarEstadoDisplay({e.porcentajeBateria, lecturasDisponibles,
-                           modoPruebaDisplay, numeroPruebaDisplay});
+                           modoPruebaDisplay, numeroPruebaDisplay,
+                           velocidad.kmh, velocidad.capturaUs != 0});
     ultimoEnvioDisplayMs = ahoraMs;
 }
 
@@ -138,6 +140,30 @@ void imprimirEstado() {
     Serial.println("--------------------------------------------");
 }
 
+// Una línea por segundo para el monitor USB, sin acceder a la SD.
+// Usa la misma velocidad publicada por PCNT que recibe el display.
+void imprimirResumenCarrera() {
+    const EstadoEnergia& e = sesion.obtenerEstado();
+    const DatosVelocidad v = leerVelocidad();
+    Serial.print("Bateria: "); Serial.print(e.porcentajeBateria, 1);
+    Serial.print(" % | Ah restantes: "); Serial.print(e.ahRestantes, 2);
+    if (lecturasDisponibles) {
+        Serial.print(" | Tension: "); Serial.print(e.voltajeV, 2);
+        Serial.print(" V | Corriente: "); Serial.print(e.corrienteA, 2);
+        Serial.print(" A | Potencia: "); Serial.print(e.potenciaW, 1);
+        Serial.print(" W");
+    } else {
+        Serial.print(" | Sensores: esperando medicion/calibracion");
+    }
+    if (v.capturaUs != 0) {
+        Serial.print(" | Velocidad: "); Serial.print(v.kmh, 1);
+        Serial.print(" km/h | RPM: "); Serial.print(v.rpm, 0);
+    } else {
+        Serial.print(" | Velocidad: esperando primera muestra");
+    }
+    Serial.println();
+}
+
 void ejecutarPruebaPatron() {
     // Caso de aceptación FIJO del algoritmo: independiente de la calibración
     // que el usuario configure para los sensores de su vehículo.
@@ -163,7 +189,6 @@ void ejecutarPruebaPatron() {
 
 void ejecutarComando(const char* comando) {
     const uint32_t ahoraMs = millis();
-    if (procesarComandoRegistro(comando)) return;
     if (!strcmp(comando, "iniciar") || !strcmp(comando, "i")) {
         if (!lecturasDisponibles) {
             Serial.println("Esperar primeras mediciones o terminar calibracion.");
@@ -211,7 +236,7 @@ void ejecutarComando(const char* comando) {
             if (!strcmp(argumento, "auto")) {
                 modoPruebaDisplay = false;
                 actualizarDisplay(ahoraMs, true);
-                Serial.println("Display: mostrando SOC calculado por Energia.");
+                Serial.println("Display: secuencia automatica de velocidad y bateria.");
             } else {
                 char* fin = nullptr;
                 const long numero = strtol(argumento, &fin, 10);
@@ -351,10 +376,10 @@ void tarea(void*) {
             if (b.ok) leerComandos();
         }
         actualizarDisplay(millis());
-        if (RegistroConfig::REPORTES_EXTENSOS && millis() - ultimoReporteMs >= Config::INTERVALO_REPORTE_MS) {
+        if (millis() - ultimoReporteMs >= Config::INTERVALO_REPORTE_MS) {
             ultimoReporteMs = millis();
             BloqueoSerial b;
-            if (b.ok) imprimirEstado();
+            if (b.ok) imprimirResumenCarrera();
         }
         if (HEARTBEAT_TAREAS && millis() - ultimoLatidoMs >= PERIODO_HEARTBEAT_MS) {
             ultimoLatidoMs = millis();

@@ -16,7 +16,6 @@
 // Serial: RX solo en Energía; TX por logSerial()/BloqueoSerial (mtxSerial).
 // Los main *.cpp originales quedan como referencia y se excluyen en platformio.ini.
 #include <Arduino.h>
-#include "Registro/Registro.h"
 #include "Rtos/Rtos.h"
 #include "Rtos/Compartidos.h"
 #include "Rtos/ColaDisplay.h"
@@ -48,10 +47,7 @@ void setup() {
 
     logSerial("ECO-YPF integrado: arranque\n");
 
-    const bool registroListo=prepararRegistro();
-    if (registroListo) comenzarSesionRegistro(); // t0 antes de adquisicion; no espera GPS/SD.
-    else logSerial("[SD] sin recursos; adquisicion continua sin registro.\n");
-
+    // Versión de carrera sin SD: no se crea ninguna tarea de registro.
     struct { const char* nombre; bool (*crear)(); } tareas[] = {
         {"Corriente",   crearTareaCorriente},
         {"PCNT",        crearTareaPCNT},
@@ -65,8 +61,6 @@ void setup() {
             Serial.printf("ERROR: no se pudo crear la tarea %s\n", t.nombre);
             fallaCritica("falla al crear tareas (memoria insuficiente)");
         }
-    if (registroListo && !crearTareasRegistro())
-        logSerial("[SD] tarea no creada; adquisicion continua.\n");
 }
 
 void loop() {

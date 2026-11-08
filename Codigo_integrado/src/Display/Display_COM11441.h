@@ -11,8 +11,9 @@ public:
     void begin(uint32_t baud = 9600);
     void clear();
     void setBrightness(uint8_t value);
-    void showText(const char* text);
+    void showText(const char* text, uint8_t decimals = 0);
     void showNumber(int value);
+    void showSpeedTenths(int tenths);
     void showBatteryPercentage(int percentage);
 
 private:

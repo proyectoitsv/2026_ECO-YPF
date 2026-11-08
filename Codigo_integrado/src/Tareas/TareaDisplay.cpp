@@ -5,15 +5,13 @@
 #include "../Display/Display_COM11441.h"
 
 namespace {
-// Tiempos editables. Solo afectan la visibilidad del COM-11441.
-constexpr uint32_t TIEMPO_ENCENDIDO_MS = 2000;
-constexpr uint32_t TIEMPO_APAGADO_MS = 3000;
-constexpr TickType_t TIEMPO_ENCENDIDO_TICKS = pdMS_TO_TICKS(TIEMPO_ENCENDIDO_MS);
-constexpr TickType_t TIEMPO_CICLO_TICKS =
-    TIEMPO_ENCENDIDO_TICKS + pdMS_TO_TICKS(TIEMPO_APAGADO_MS);
-static_assert(TIEMPO_ENCENDIDO_TICKS > 0 &&
-              TIEMPO_CICLO_TICKS > TIEMPO_ENCENDIDO_TICKS,
-              "Los tiempos del display deben ocupar al menos un tick.");
+// Vacío 3 s, velocidad 2 s, vacío 3 s, velocidad 2 s,
+// vacío 3 s, batería 3 s. La vuelta completa dura 16 segundos.
+constexpr TickType_t FINES_FASE[] = {
+    pdMS_TO_TICKS(3000), pdMS_TO_TICKS(5000), pdMS_TO_TICKS(8000),
+    pdMS_TO_TICKS(10000), pdMS_TO_TICKS(13000), pdMS_TO_TICKS(16000)
+};
+constexpr TickType_t TIEMPO_CICLO_TICKS = FINES_FASE[5];
 
 void tarea(void*) {
     DisplayCOM11441 display(Serial1, Config::PIN_TX_DISPLAY, Config::PIN_RX_DISPLAY);
@@ -27,9 +25,8 @@ void tarea(void*) {
               static_cast<unsigned long>(Config::BAUDIOS_DISPLAY));
 
     EstadoDisplay estado = {};
-    bool estabaEncendido = false;
-    bool hayContenidoMostrado = false;
-    bool mostrabaNumero = false;
+    // Tipos de contenido: 0 vacío, 1 sin dato, 2 prueba, 3 velocidad, 4 batería.
+    int ultimoTipo = 0;
     int ultimoNumero = 0;
     TickType_t inicioCiclo = xTaskGetTickCount();
 
@@ -38,54 +35,50 @@ void tarea(void*) {
         // La resta sin signo admite el desbordamiento del contador de ticks.
         TickType_t transcurrido = ahora - inicioCiclo;
         if (transcurrido >= TIEMPO_CICLO_TICKS) {
-            // Conserva el periodo de 5 s aunque lleguen datos o haya retrasos.
             inicioCiclo += (transcurrido / TIEMPO_CICLO_TICKS) * TIEMPO_CICLO_TICKS;
             transcurrido = ahora - inicioCiclo;
         }
-
-        // La visibilidad depende del reloj del ciclo, no de cuándo llegan
-        // capturas CSV o actualizaciones nuevas de SOC.
-        const bool encendido = transcurrido < TIEMPO_ENCENDIDO_TICKS;
-        if (!encendido) {
-            // Una sola orden 0x76 por apagado: todos los LED quedan en blanco.
-            // El ATmega sigue alimentado. No se cambia brillo ni EEPROM.
-            if (estabaEncendido) display.clear();
-            hayContenidoMostrado = false;
-            mostrabaNumero = false;
-        } else {
-            const bool hayNumero = estado.modoPrueba ||
-                (estado.lecturaDisponible && isfinite(estado.porcentajeBateria));
-            if (!hayNumero) {
-                if (!hayContenidoMostrado || mostrabaNumero) display.showText("----");
-                mostrabaNumero = false;
-            } else {
-                int numero;
-                if (estado.modoPrueba) {
-                    numero = estado.numeroPrueba;
-                    if (numero > 9999) numero = 9999;
-                    else if (numero < -999) numero = -999;
-                } else {
+        unsigned fase = 0;
+        while (transcurrido >= FINES_FASE[fase]) ++fase;
+        const bool encendido = (fase % 2) != 0;
+        int tipo = 0;
+        int numero = 0;
+        if (encendido) {
+            tipo = 1;
+            if (estado.modoPrueba) {
+                tipo = 2;
+                numero = estado.numeroPrueba;
+                if (numero > 9999) numero = 9999;
+                else if (numero < -999) numero = -999;
+            } else if (fase == 5) {
+                if (estado.lecturaDisponible && isfinite(estado.porcentajeBateria)) {
+                    tipo = 4;
                     float soc = estado.porcentajeBateria;
                     if (soc < 0.0f) soc = 0.0f;
                     else if (soc > 100.0f) soc = 100.0f;
-                    numero = static_cast<int>(soc + 0.5f); // Mismo redondeo anterior.
+                    numero = static_cast<int>(soc + 0.5f);
                 }
-                // Al volver del apagado se reenvia, aunque el numero sea igual.
-                if (!hayContenidoMostrado || !mostrabaNumero || numero != ultimoNumero) {
-                    if (estado.modoPrueba) display.showNumber(numero);
-                    else display.showBatteryPercentage(numero);
-                    ultimoNumero = numero;
-                }
-                mostrabaNumero = true;
+            } else if (estado.velocidadDisponible && isfinite(estado.velocidadKmH) &&
+                       estado.velocidadKmH >= 0.0f && estado.velocidadKmH <= 99.9f) {
+                tipo = 3;
+                numero = static_cast<int>(estado.velocidadKmH * 10.0f + 0.5f);
             }
-            hayContenidoMostrado = true;
         }
-        estabaEncendido = encendido;
+        // Solo se transmite al cambiar el dato visible o al cambiar de fase.
+        // Los datos nuevos actualizan la velocidad sin alargar los dos segundos.
+        if (tipo != ultimoTipo || (tipo >= 2 && numero != ultimoNumero)) {
+            if (tipo == 0) display.clear();
+            else if (tipo == 1) display.showText("----");
+            else if (tipo == 2) display.showNumber(numero);
+            else if (tipo == 3) display.showSpeedTenths(numero);
+            else display.showBatteryPercentage(numero);
+            ultimoTipo = tipo;
+            ultimoNumero = numero;
+        }
 
         // Espera hasta un dato nuevo O el proximo cambio de fase.
         // FreeRTOS duerme esta tarea; las otras tareas siguen ejecutandose.
-        const TickType_t finFase = encendido ?
-            TIEMPO_ENCENDIDO_TICKS : TIEMPO_CICLO_TICKS;
+        const TickType_t finFase = FINES_FASE[fase];
         const TickType_t transcurridoAlEsperar = xTaskGetTickCount() - inicioCiclo;
         if (transcurridoAlEsperar >= finFase) continue;
         const TickType_t espera = finFase - transcurridoAlEsperar;

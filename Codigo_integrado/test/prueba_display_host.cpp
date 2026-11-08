@@ -48,7 +48,12 @@ struct ColaSimulada {
     std::vector<uint8_t> dato;
 };
 static ColaSimulada cola;
-static std::deque<EstadoDisplay> guion;
+struct Evento { uint32_t ms; EstadoDisplay estado; };
+static std::deque<Evento> guion;
+static uint32_t origen, limite;
+struct Salida { uint32_t ms; std::vector<uint8_t> bytes; };
+static std::vector<Salida> salidas;
+static size_t bytesVistos = 0;
 static bool ejecutandoConsumidor = false;
 QueueHandle_t xQueueCreate(UBaseType_t longitud, UBaseType_t tamano) {
     assert(longitud == 1 && tamano == sizeof(EstadoDisplay));
@@ -60,16 +65,27 @@ BaseType_t xQueueOverwrite(QueueHandle_t q, const void* dato) {
     return pdPASS;
 }
 BaseType_t xQueueReceive(QueueHandle_t q, void* dato, TickType_t espera) {
-    if (!q->llena && ejecutandoConsumidor && !guion.empty()) {
-        xQueueOverwrite(q, &guion.front()); guion.pop_front();
-    }
-    if (!q->llena) {
-        if (ejecutandoConsumidor) {
-            // El consumidor ahora espera un dato o el cambio de fase 2 s/3 s.
-            assert(espera > 0 && espera <= pdMS_TO_TICKS(3000)); throw FinPrueba{};
+    if (ejecutandoConsumidor) {
+        const uint32_t relativo = relojMs - origen;
+        if (Serial1.bytes.size() != bytesVistos) {
+            salidas.push_back({relativo, std::vector<uint8_t>(
+                Serial1.bytes.begin() + bytesVistos, Serial1.bytes.end())});
+            bytesVistos = Serial1.bytes.size();
         }
-        return 0;
+        if (!q->llena) {
+            assert(espera > 0 && espera <= pdMS_TO_TICKS(3000));
+            if (!guion.empty() && guion.front().ms - relativo <= espera) {
+                relojMs = origen + guion.front().ms;
+                xQueueOverwrite(q, &guion.front().estado);
+                guion.pop_front();
+            } else {
+                relojMs += espera;
+                if (relojMs - origen > limite) throw FinPrueba{};
+                return 0;
+            }
+        }
     }
+    if (!q->llena) return 0;
     memcpy(dato, q->dato.data(), q->tamano); q->llena = false;
     return pdTRUE;
 }
@@ -78,6 +94,8 @@ BaseType_t xQueueReceive(QueueHandle_t q, void* dato, TickType_t espera) {
 void inicializarTension() {}
 MedidaTension leerTensionCompleta() { return {}; }
 MedidaCorriente leerCorriente() { return {}; }
+static DatosVelocidad velocidadSimulada = {};
+DatosVelocidad leerVelocidad() { return velocidadSimulada; }
 void publicarTension(const MedidaTension&) {}
 void publicarEnergia(const EstadoEnergia&) {}
 void publicarInfoEnergia(const InfoEnergiaRegistro&) {}
@@ -90,7 +108,7 @@ static EstadoDisplay recibir() {
 }
 
 int main() {
-    assert(!publicarEstadoDisplay({100.0f, true, false, 0}));
+    assert(!publicarEstadoDisplay({100.0f, true, false, 0, 0.0f, false}));
     assert(inicializarColaDisplay() && inicializarColaDisplay());
     sesion.reiniciar(0);
     lecturasDisponibles = false;
@@ -122,42 +140,67 @@ int main() {
     assert(!recibir().modoPrueba);
     assert(sesion.activa() && sesion.obtenerEstado().porcentajeBateria == 50.0f);
 
-    // Dos envíos sin consumidor: queda solo el más reciente.
-    publicarEstadoDisplay({60.0f, true, false, 0});
-    publicarEstadoDisplay({50.2f, true, false, 0});
-    // Se inicia el consumidor real y se alimenta una secuencia controlada.
-    guion = {
-        {50.4f, true, false, 0}, {49.49f, true, false, 0},
-        {49.49f, true, true, 1234}, {49.49f, true, true, 1234},
-        {49.49f, true, false, 0}, {49.49f, false, false, 0},
-        {49.49f, false, false, 0}, {0.1f, true, false, 0},
-        {101.0f, true, false, 0}, {-1.0f, true, false, 0},
-        {std::numeric_limits<float>::quiet_NaN(), true, false, 0},
-        {0.0f, false, true, 42}
-    };
+    // El productor transmite la velocidad de rueda sin depender del SOC.
+    velocidadSimulada.kmh = 27.1f;
+    velocidadSimulada.capturaUs = 1000;
+    actualizarDisplay(0, true);
+    e = recibir();
+    assert(e.velocidadDisponible && e.velocidadKmH == 27.1f);
+    const EstadoDisplay inicial = {50.2f, true, false, 0, 27.1f, true};
     assert(crearTareaDisplay() && consumidorDisplay);
-    ejecutandoConsumidor = true;
-    try { consumidorDisplay(nullptr); } catch (const FinPrueba&) {}
-    assert(Serial1.baud == 9600 && Serial1.config == SERIAL_8N1);
-    assert(Serial1.tx == 13 && Serial1.rx == 14);
-    assert(Serial1.bytes.size() >= 3);
-    assert(Serial1.bytes[0] == 0x76 && Serial1.bytes[1] == 0x7A);
-    assert(Serial1.bytes[2] == Config::BRILLO_DISPLAY);
-    std::vector<std::string> pantallas;
-    for (size_t i = 3; i < Serial1.bytes.size(); i += 6) {
-        assert(i + 6 <= Serial1.bytes.size());
-        assert(Serial1.bytes[i] == 0x79 && Serial1.bytes[i + 1] == 0);
-        pantallas.emplace_back(Serial1.bytes.begin() + i + 2, Serial1.bytes.begin() + i + 6);
+    // Dos vueltas, datos durante encendido/apagado y cruce del contador de ticks.
+    for (uint32_t inicio : {0u, UINT32_MAX - 9000u}) {
+        relojMs = inicio;
+        origen = inicio + Config::ESTABILIZACION_DISPLAY_MS;
+        limite = 32000;
+        salidas.clear(); Serial1.bytes.clear(); bytesVistos = 0;
+        publicarEstadoDisplay({60.0f, true, false, 0, 10.0f, true});
+        publicarEstadoDisplay(inicial); // La cola conserva solo el último dato.
+        guion = {
+            {3500, {50.2f, true, false, 0, 28.2f, true}},
+            {4000, {50.2f, true, false, 0, 28.2f, true}}, // No reenviar.
+            {6000, {49.49f, true, false, 0, 9.0f, true}}, // Recibir en blanco.
+            {8500, {49.49f, true, false, 0, 0.0f, false}},
+            {11000, {49.49f, true, false, 0, 0.0f, true}},
+            {19500, {49.49f, true, true, 1234, 0.0f, true}},
+            {20000, {49.49f, true, false, 0, 99.9f, true}},
+            {24500, {49.49f, true, false, 0, 100.0f, true}},
+            {29500, {101.0f, true, false, 0, 0.0f, true}}
+        };
+        ejecutandoConsumidor = true;
+        try { consumidorDisplay(nullptr); } catch (const FinPrueba&) {}
+        ejecutandoConsumidor = false;
+        assert(Serial1.baud == Config::BAUDIOS_DISPLAY && Serial1.config == SERIAL_8N1);
+        assert(Serial1.tx == Config::PIN_TX_DISPLAY && Serial1.rx == Config::PIN_RX_DISPLAY);
+        const std::vector<uint32_t> tiempos = {
+            0, 3000, 3500, 5000, 8000, 8500, 10000, 13000, 16000,
+            19000, 19500, 20000, 21000, 24000, 24500, 26000, 29000, 29500, 32000
+        };
+        const std::vector<std::string> textos = {
+            "", "271-", "282-", "", " 90-", "----", "", "  49", "",
+            " 00-", "1234", "999-", "", "999-", "----", "", "  49", " 100", ""
+        };
+        assert(salidas.size() == tiempos.size());
+        for (size_t i = 0; i < salidas.size(); ++i) {
+            assert(salidas[i].ms == tiempos[i]);
+            const auto& bytes = salidas[i].bytes;
+            if (i == 0) {
+                assert((bytes == std::vector<uint8_t>{0x76, 0x7A, Config::BRILLO_DISPLAY}));
+            } else if (textos[i].empty()) {
+                assert((bytes == std::vector<uint8_t>{0x76}));
+            } else {
+                assert(bytes.size() == 8 && bytes[0] == 0x77);
+                const bool velocidad = textos[i].back() == '-' && textos[i] != "----";
+                assert(bytes[1] == (velocidad ? 0x02 : 0));
+                assert(bytes[2] == 0x79 && bytes[3] == 0);
+                assert(std::string(bytes.begin() + 4, bytes.end()) == textos[i]);
+            }
+        }
     }
-    const std::vector<std::string> esperado = {
-        "----", "  50", "  49", "1234", "  49", "----",
-        "   0", " 100", "   0", "----", "  42"
-    };
-    assert(pantallas == esperado); // Sin reenvíos de números repetidos.
     Serial1.bytes.clear();
-    DisplayCOM11441 driver(Serial1, 13, 14);
+    DisplayCOM11441 driver(Serial1, Config::PIN_TX_DISPLAY, Config::PIN_RX_DISPLAY);
     driver.showText("1");
-    assert(std::string(Serial1.bytes.begin() + 2, Serial1.bytes.end()) == "1   ");
-    std::cout << "OK: Energía -> cola -> Display; SOC 50 %, UART TX13/RX14, "
-                 "modo manual, sobrescritura, límites y ausencia de reenvíos.\n";
+    assert(std::string(Serial1.bytes.begin() + 4, Serial1.bytes.end()) == "1   ");
+    std::cout << "OK: velocidad de rueda -> cola -> UART, decimal y guion, secuencia de 16 s, "
+                 "actualizacion visible, bateria, modo manual, limites y desbordamiento del reloj.\n";
 }

@@ -11,6 +11,8 @@ struct EstadoDisplay {
     bool lecturaDisponible; // Primer promedio listo y sin calibración en curso.
     bool modoPrueba;
     int numeroPrueba;
+    float velocidadKmH;
+    bool velocidadDisponible;
 };
 
 // Llamar una vez en setup(), antes de crear las tareas.

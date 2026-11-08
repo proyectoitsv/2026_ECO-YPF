@@ -55,6 +55,7 @@ void vTaskDelayUntil(TickType_t* ultimo, TickType_t paso) {
     if (reloj >= fin) throw FinSimulacion{};
 }
 void publicarTension(const MedidaTension&) {}
+DatosVelocidad leerVelocidad() { return {}; }
 MedidaCorriente leerCorriente() { return corrienteCompartida; }
 void publicarInfoEnergia(const InfoEnergiaRegistro& i) { infoPublicada = i; }
 bool publicarEstadoDisplay(const EstadoDisplay& e) { displayPublicado = e; return true; }
